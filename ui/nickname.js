@@ -45,8 +45,8 @@ export function Nickname({ onSubmit }) {
           style: `
             width: clamp(380px, 44vw, 620px);
             max-width: 92vw;
-            margin-top: 54px;
-            margin-bottom: 16px;
+            margin-top: 10px;
+            margin-bottom: 10px;
             image-rendering: pixelated;
             display: block;
             filter: drop-shadow(0 16px 48px #94ffd3cc)
@@ -82,7 +82,7 @@ export function Nickname({ onSubmit }) {
                 box-shadow: 0 12px 44px 0 #34ffcc55,
                             0 0 0 10px #3be6aa77 inset,
                             0 0 42px 12px #7affc677;
-                padding: 78px 64px 72px 64px;
+                padding: 50px 64px 36px 64px;
                 min-width: 500px;
                 min-height: 340px;
                 max-width: 96vw;
