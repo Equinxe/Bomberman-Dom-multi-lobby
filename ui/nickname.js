@@ -2,23 +2,39 @@ import { setState } from "../Core/state.js";
 import { registerEvent } from "../Core/events.js";
 
 export function Nickname({ onSubmit }) {
+  function handleInputLobbyCode(e) {
+    const value = e.target.value.trim();
+    const btn = document.getElementById("join-lobby-btn");
+    if (btn) {
+      btn.disabled = value === "";
+      btn.style.opacity = value === "" ? 0.5 : 1;
+      btn.style.cursor = value === "" ? "not-allowed" : "pointer";
+    }
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
-    const pseudo = e.target.elements.nickname.value.trim();
-    const lobbyCode = e.target.elements.lobbyCode.value.trim().toUpperCase();
-    if (!pseudo) return;
+    const pseudoInput = document.getElementById("nickname");
+    const lobbyCodeInput = document.getElementById("lobbyCode");
+    const pseudo = pseudoInput ? pseudoInput.value.trim() : "";
+    const lobbyCode = lobbyCodeInput
+      ? lobbyCodeInput.value.trim().toUpperCase()
+      : "";
+    if (!pseudo || !lobbyCode) return;
     setState({ nickname: pseudo, lobbyCode });
-    if (typeof onSubmit === "function") onSubmit(e);
+    if (typeof onSubmit === "function") onSubmit(e, { create: false });
   }
 
   function handleCreateLobby(e) {
     e.preventDefault();
-    const pseudo = e.target.form.elements.nickname.value.trim();
+    const pseudoInput = document.getElementById("nickname");
+    const pseudo = pseudoInput ? pseudoInput.value.trim() : "";
     if (!pseudo) return;
     setState({ nickname: pseudo, lobbyCode: "" });
     if (typeof onSubmit === "function") onSubmit(e, { create: true });
   }
 
+  registerEvent("handleInputLobbyCode", handleInputLobbyCode);
   registerEvent("handleSubmit", handleSubmit);
   registerEvent("handleCreateLobby", handleCreateLobby);
 
@@ -155,7 +171,7 @@ export function Nickname({ onSubmit }) {
                       type: "text",
                       id: "lobbyCode",
                       name: "lobbyCode",
-                      placeholder: "Code du lobby (laisser vide pour créer)",
+                      placeholder: "Code du lobby (obligatoire pour rejoindre)",
                       maxlength: 10,
                       style: `
                         padding: 18px 38px;
@@ -175,11 +191,14 @@ export function Nickname({ onSubmit }) {
                         filter: drop-shadow(0 2px 12px #1bff9040);
                       `,
                     },
+                    events: { input: "handleInputLobbyCode" }, // <-- le bon event !
                   },
                   {
                     tag: "button",
                     attrs: {
+                      id: "join-lobby-btn",
                       type: "submit",
+                      disabled: true,
                       style: `
                         padding: 23px 48px;
                         font-size: 28px;
@@ -187,7 +206,7 @@ export function Nickname({ onSubmit }) {
                         color: #1d2820;
                         border-radius: 16px;
                         border: none;
-                        cursor: pointer;
+                        cursor: not-allowed;
                         font-family: 'Press Start 2P', monospace;
                         box-shadow: 0 8px 32px #1bff9044, 0 0 18px #45ffc088;
                         font-weight: bold;
@@ -196,6 +215,7 @@ export function Nickname({ onSubmit }) {
                         transition: filter .2s, transform .08s;
                         animation: buttonShine 2.2s infinite linear;
                         margin-bottom: 12px;
+                        opacity: 0.5;
                       `,
                     },
                     children: ["Rejoindre le lobby"],

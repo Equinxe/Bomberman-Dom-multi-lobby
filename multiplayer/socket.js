@@ -1,7 +1,10 @@
+import { PopupError } from "../ui/popup.js";
+import { createElement } from "../Core/dom.js"; // ton utilitaire pour générer un vrai Node
+
 export function createSocket(onLobbyUpdate) {
   let socket;
   return {
-    connect(pseudo, lobbyCode = "") {
+    connect(pseudo, lobbyCode = "", create = false) {
       socket = new WebSocket("ws://localhost:9001");
       socket.addEventListener("open", () => {
         socket.send(
@@ -9,7 +12,7 @@ export function createSocket(onLobbyUpdate) {
             type: "join",
             pseudo,
             lobbyCode: lobbyCode,
-            create: lobbyCode === "", // Si pas de code, crée un nouveau lobby
+            create: create,
           })
         );
       });
@@ -17,6 +20,18 @@ export function createSocket(onLobbyUpdate) {
         const data = JSON.parse(e.data);
         if (data.type === "lobby" || data.type === "waiting") {
           onLobbyUpdate(data.players, data.chat, data.queue, data, data.code);
+        }
+        if (data.type === "error") {
+          // Ajoute le pop-up devant le form, sans remplacer le form !
+          const app = document.getElementById("app");
+          if (app && !document.getElementById("popup-error")) {
+            const popupVNode = PopupError({ message: data.message });
+            const popupElem = createElement(popupVNode);
+            app.appendChild(popupElem);
+            setTimeout(() => {
+              if (app.contains(popupElem)) app.removeChild(popupElem);
+            }, 3000);
+          }
         }
       });
     },

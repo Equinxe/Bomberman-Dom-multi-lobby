@@ -1,5 +1,4 @@
-import { WebSocketServer } from "ws";
-
+import WebSocket, { WebSocketServer } from "ws";
 const wss = new WebSocketServer({ port: 9001 });
 
 let lobbys = {}; // { code: { players: [], chat: [], queue: [] } }
@@ -39,14 +38,22 @@ wss.on("connection", (ws) => {
       let code = data.lobbyCode;
       if (data.create || !code) {
         code = randLobbyCode();
-      }
-      ws.lobbyCode = code;
-      if (!lobbys[code]) {
+        ws.lobbyCode = code;
         lobbys[code] = { players: [], chat: [], queue: [] };
+      } else {
+        ws.lobbyCode = code;
+        if (!lobbys[code]) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Ce lobby n'existe pas.",
+            })
+          );
+          return;
+        }
       }
-      let lobby = lobbys[code];
+      let lobby = lobbys[ws.lobbyCode];
 
-      // Vérifie si le joueur existe déjà
       if (
         !lobby.players.some((p) => p.id === id) &&
         !lobby.queue.some((p) => p.id === id)
@@ -56,7 +63,7 @@ wss.on("connection", (ws) => {
           ws.send(
             JSON.stringify({
               type: "waiting",
-              code,
+              code: ws.lobbyCode,
               message: "Lobby complet, file d'attente...",
               queuePosition: lobby.queue.length,
               queue: lobby.queue.map((q) => q.pseudo),
@@ -69,12 +76,12 @@ wss.on("connection", (ws) => {
             text: `${data.pseudo} est en attente pour rejoindre le lobby`,
             time: now(),
           });
-          broadcast(code, {
+          broadcast(ws.lobbyCode, {
             type: "lobby",
             players: lobby.players,
             chat: lobby.chat,
             queue: lobby.queue.map((q) => q.pseudo),
-            code,
+            code: ws.lobbyCode,
           });
           return;
         }
@@ -85,12 +92,12 @@ wss.on("connection", (ws) => {
           text: `${data.pseudo} a rejoint le lobby`,
           time: now(),
         });
-        broadcast(code, {
+        broadcast(ws.lobbyCode, {
           type: "lobby",
           players: lobby.players,
           chat: lobby.chat,
           queue: lobby.queue.map((q) => q.pseudo),
-          code,
+          code: ws.lobbyCode,
         });
       }
     }
@@ -119,9 +126,7 @@ wss.on("connection", (ws) => {
         p.ready = !p.ready;
         lobby.chat.push({
           system: true,
-          text: p.ready
-            ? `${p.pseudo} est prêt`
-            : `${p.pseudo} n'est plus prêt`,
+          text: `${p.pseudo} ${p.ready ? "est prêt" : "n'est plus prêt"}`,
           time: now(),
         });
       }
@@ -137,48 +142,12 @@ wss.on("connection", (ws) => {
     if (data.type === "chat") {
       let code = ws.lobbyCode;
       let lobby = lobbys[code];
-      let p =
-        (lobby && lobby.players.find((p) => p.id === id)) ||
-        (lobby && lobby.queue.find((q) => q.id === id));
-      if (p && data.text)
-        lobby.chat.push({ author: p.pseudo, text: data.text, time: now() });
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
-    }
-  });
-
-  ws.on("close", () => {
-    let code = ws.lobbyCode;
-    if (!code || !lobbys[code]) return;
-    let lobby = lobbys[code];
-    let leaver = lobby.players.find((p) => p.id === id);
-    let pseudo =
-      (leaver && leaver.pseudo) ||
-      (lobby.queue.find((q) => q.id === id) || {}).pseudo ||
-      "???";
-    if (leaver) {
-      lobby.chat.push({
-        system: true,
-        text: `${leaver.pseudo} a quitté le lobby`,
-        time: now(),
-      });
-      lobby.players = lobby.players.filter((p) => p.id !== id);
-      if (lobby.queue.length > 0) {
-        const next = lobby.queue.shift();
-        lobby.players.push({
-          id: next.id,
-          pseudo: next.pseudo,
-          color: 0,
-          ready: false,
-        });
+      let p = lobby && lobby.players.find((p) => p.id === id);
+      if (lobby && data.text) {
         lobby.chat.push({
-          system: true,
-          text: `${next.pseudo} a rejoint le lobby depuis la file d'attente`,
+          system: false,
+          author: p ? p.pseudo : "???",
+          text: data.text,
           time: now(),
         });
       }
@@ -189,21 +158,6 @@ wss.on("connection", (ws) => {
         queue: lobby.queue.map((q) => q.pseudo),
         code,
       });
-      return;
     }
-    lobby.queue = lobby.queue.filter((q) => q.id !== id);
-    lobby.chat.push({
-      system: true,
-      text: `${pseudo} a quitté la file d'attente`,
-      time: now(),
-    });
-    broadcast(code, {
-      type: "lobby",
-      players: lobby.players,
-      chat: lobby.chat,
-      queue: lobby.queue.map((q) => q.pseudo),
-      code,
-    });
   });
 });
-console.log("WebSocket server running on ws://localhost:9001");

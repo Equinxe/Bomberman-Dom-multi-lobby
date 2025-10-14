@@ -22,10 +22,14 @@ function showNicknameForm() {
   render(Nickname({ onSubmit: handleSubmit }), container, getEventsMap());
 }
 
-function handleSubmit(e) {
+function handleSubmit(e, opts = {}) {
   e.preventDefault();
-  const nickname = e.target.nickname.value.trim();
-  const lobbyCode = e.target.lobbyCode.value.trim().toUpperCase();
+  const pseudoInput = document.getElementById("nickname");
+  const lobbyCodeInput = document.getElementById("lobbyCode");
+  const nickname = pseudoInput ? pseudoInput.value.trim() : "";
+  const lobbyCode = lobbyCodeInput
+    ? lobbyCodeInput.value.trim().toUpperCase()
+    : "";
   setState({ nickname, lobbyCode });
   mySocket = createSocket((players, chat, queue, waitingMsg, code) => {
     const myPseudo = getState().nickname;
@@ -57,7 +61,7 @@ function handleSubmit(e) {
     }
     showLobby();
   });
-  mySocket.connect(nickname, lobbyCode);
+  mySocket.connect(nickname, lobbyCode, opts.create === true);
   window.requestLobbyRender = showLobby;
 }
 
@@ -109,16 +113,10 @@ function showLobby() {
       queue: lobbyState.queue,
       waiting: false,
       queuePosition: 0,
-      onReady: handleReady,
-      onSendMessage: handleSendMessage,
     }),
     container,
     getEventsMap()
   );
-  setTimeout(() => {
-    const chatList = container.querySelector("[data-chat-list]");
-    if (chatList) chatList.scrollTop = chatList.scrollHeight;
-  }, 0);
 }
 
 showNicknameForm();
