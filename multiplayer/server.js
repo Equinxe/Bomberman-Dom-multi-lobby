@@ -23,10 +23,24 @@ function broadcast(code, data) {
   });
 }
 
+// Broadcast le nombre de clients WebSocket connectés (tous, pas seulement dans un lobby)
+function broadcastPlayerCountAll() {
+  const count = Array.from(wss.clients).filter(
+    (c) => c.readyState === 1
+  ).length;
+  wss.clients.forEach((client) => {
+    if (client.readyState === 1) {
+      client.send(JSON.stringify({ type: "playerCountAll", count }));
+    }
+  });
+}
+
 wss.on("connection", (ws) => {
   let id = Math.random().toString(36).slice(2);
   ws.id = id;
   ws.lobbyCode = null;
+
+  broadcastPlayerCountAll();
 
   ws.on("message", (msg) => {
     let data = {};
@@ -159,5 +173,28 @@ wss.on("connection", (ws) => {
         code,
       });
     }
+  });
+
+  ws.on("close", () => {
+    const code = ws.lobbyCode;
+    if (!code || !lobbys[code]) {
+      broadcastPlayerCountAll();
+      return;
+    }
+    lobbys[code].players = lobbys[code].players.filter((p) => p.id !== id);
+    lobbys[code].queue = lobbys[code].queue.filter((q) => q.id !== id);
+    lobbys[code].chat.push({
+      system: true,
+      text: `Un joueur a quitté le lobby`,
+      time: now(),
+    });
+    broadcast(code, {
+      type: "lobby",
+      players: lobbys[code].players,
+      chat: lobbys[code].chat,
+      queue: lobbys[code].queue.map((q) => q.pseudo),
+      code,
+    });
+    broadcastPlayerCountAll();
   });
 });
