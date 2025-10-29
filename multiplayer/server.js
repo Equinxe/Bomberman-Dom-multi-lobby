@@ -1,7 +1,9 @@
 import WebSocket, { WebSocketServer } from "ws";
+import { LobbyTimer } from "../server/lobby-timer.js"; // integration du timer robuste
+
 const wss = new WebSocketServer({ port: 9001 });
 
-let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'starting'|'in-game', timers:{}, waitingValue, countdownValue } }
+let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'starting'|'in-game', timers:{}, waitingValue, countdownValue, timer: LobbyTimer } }
 
 const COLOR_NAMES = ["Blanc", "Noir", "Rouge", "Bleu", "Vert", "Jaune"];
 
@@ -46,163 +48,61 @@ function ensureLobby(code) {
       timers: {},
       waitingValue: 0,
       countdownValue: 0,
+      timer: null,
     };
+
+    // broadcast function bound to this lobby code
+    const broadcastForThisLobby = (type, payload = {}) => {
+      broadcast(code, { type, ...payload });
+    };
+    // instantiate LobbyTimer for this lobby, passing a getter to the lobby players array
+    lobbys[code].timer = new LobbyTimer(
+      broadcastForThisLobby,
+      () => lobbys[code].players
+    );
   }
   return lobbys[code];
 }
 
+// Delegation helpers: use lobby.timer if present
 function startWaiting20(code, duration = 20) {
-  const lobby = ensureLobby(code);
-  if (lobby.state !== "lobby") return;
-  if (lobby.timers.waiting20Interval) return;
-  lobby.waitingValue = duration;
-  lobby.chat.push({
-    system: true,
-    text: `Phase de préparation commencée (${duration}s).`,
-    time: now(),
-  });
-  broadcast(code, { type: "waitingStarted", duration: lobby.waitingValue });
-  lobby.timers.waiting20Interval = setInterval(() => {
-    lobby.waitingValue -= 1;
-    if (lobby.waitingValue > 0) {
-      broadcast(code, { type: "waitingTick", value: lobby.waitingValue });
-    } else {
-      clearInterval(lobby.timers.waiting20Interval);
-      lobby.timers.waiting20Interval = null;
-      lobby.waitingValue = 0;
-      // si >=2 ready -> start countdown 10
-      const readyCount = lobby.players.filter((p) => p.ready).length;
-      if (readyCount >= 2) {
-        startCountdown10(code);
-      } else {
-        lobby.chat.push({
-          system: true,
-          text: `La préparation est terminée mais pas assez de joueurs prêts.`,
-          time: now(),
-        });
-        broadcast(code, { type: "waitingCancelled" });
-      }
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
-    }
-  }, 1000);
+  const lobby = lobbys[code];
+  if (!lobby) return;
+  if (lobby.timer) lobby.timer.startWaiting(duration);
 }
 
 function cancelWaiting20(code) {
   const lobby = lobbys[code];
-  if (!lobby || !lobby.timers.waiting20Interval) return;
-  clearInterval(lobby.timers.waiting20Interval);
-  lobby.timers.waiting20Interval = null;
-  lobby.waitingValue = 0;
-  lobby.chat.push({
-    system: true,
-    text: `La préparation a été annulée.`,
-    time: now(),
-  });
-  broadcast(code, { type: "waitingCancelled" });
-  broadcast(code, {
-    type: "lobby",
-    players: lobby.players,
-    chat: lobby.chat,
-    queue: lobby.queue.map((q) => q.pseudo),
-    code,
-  });
+  if (!lobby || !lobby.timer) return;
+  // notify and clear through timer API
+  if (lobby.timer.timer && lobby.timer.timer.type === "waiting") {
+    lobby.timer.broadcast("waitingCancelled", {});
+  }
+  lobby.timer.clearTimer();
 }
 
 function startCountdown10(code) {
-  const lobby = ensureLobby(code);
-  if (lobby.state !== "lobby") return;
-  if (lobby.timers.countdown10) return;
-  // cancel waiting20 if exists
-  if (lobby.timers.waiting20Interval) {
-    clearInterval(lobby.timers.waiting20Interval);
-    lobby.timers.waiting20Interval = null;
-    lobby.waitingValue = 0;
-  }
-  lobby.state = "starting";
-  lobby.countdownValue = 10;
-  lobby.chat.push({
-    system: true,
-    text: `Compte à rebours de démarrage (10s) lancé.`,
-    time: now(),
-  });
-  broadcast(code, { type: "countdownStart", value: lobby.countdownValue });
-  lobby.timers.countdown10 = setInterval(() => {
-    lobby.countdownValue -= 1;
-    if (lobby.countdownValue > 0) {
-      broadcast(code, { type: "countdownTick", value: lobby.countdownValue });
-    } else {
-      clearInterval(lobby.timers.countdown10);
-      lobby.timers.countdown10 = null;
-      lobby.state = "in-game";
-      // Broadcast gameStart with players and mapSeed (server-driven)
-      const playersPayload = lobby.players.map((p) => ({
-        id: p.id,
-        pseudo: p.pseudo,
-        color: p.color,
-        ready: p.ready,
-      }));
-      lobby.chat.push({
-        system: true,
-        text: `La partie démarre maintenant.`,
-        time: now(),
-      });
-      broadcast(code, {
-        type: "gameStart",
-        players: playersPayload,
-        mapSeed: Date.now(),
-      });
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
-    }
-  }, 1000);
+  const lobby = lobbys[code];
+  if (!lobby) return;
+  if (lobby.timer) lobby.timer.startCountdown(10);
 }
 
 function stopCountdown10(code) {
   const lobby = lobbys[code];
-  if (!lobby || !lobby.timers.countdown10) return;
-  clearInterval(lobby.timers.countdown10);
-  lobby.timers.countdown10 = null;
-  lobby.countdownValue = 0;
-  lobby.state = "lobby";
-  lobby.chat.push({
-    system: true,
-    text: `Le compte à rebours a été annulé.`,
-    time: now(),
-  });
-  broadcast(code, { type: "countdownCancelled" });
-  broadcast(code, {
-    type: "lobby",
-    players: lobby.players,
-    chat: lobby.chat,
-    queue: lobby.queue.map((q) => q.pseudo),
-    code,
-  });
+  if (!lobby || !lobby.timer) return;
+  if (lobby.timer.timer && lobby.timer.timer.type === "countdown") {
+    lobby.timer.broadcast("countdownCancelled", {});
+  }
+  lobby.timer.clearTimer();
 }
 
 // Reset lobby back to lobby state so a new game can be started
 function exitToLobby(code) {
   const lobby = lobbys[code];
   if (!lobby) return;
-  // clear timers
-  if (lobby.timers.waiting20Interval) {
-    clearInterval(lobby.timers.waiting20Interval);
-    lobby.timers.waiting20Interval = null;
-  }
-  if (lobby.timers.countdown10) {
-    clearInterval(lobby.timers.countdown10);
-    lobby.timers.countdown10 = null;
-  }
+  // clear timers via timer API
+  if (lobby.timer) lobby.timer.clearTimer();
+
   lobby.waitingValue = 0;
   lobby.countdownValue = 0;
   lobby.state = "lobby";
@@ -259,6 +159,7 @@ wss.on("connection", (ws) => {
         !lobby.players.some((p) => p.id === id) &&
         !lobby.queue.some((p) => p.id === id)
       ) {
+        // enqueue if lobby full
         if (lobby.players.length >= 4) {
           lobby.queue.push({ id, pseudo: data.pseudo });
           ws.send(
@@ -286,13 +187,16 @@ wss.on("connection", (ws) => {
           });
           return;
         }
-        let player = { id, pseudo: data.pseudo, color: 0, ready: false };
+
+        let player = { id, pseudo: data.pseudo, color: 0, ready: false, ws };
         lobby.players.push(player);
         lobby.chat.push({
           system: true,
           text: `${data.pseudo} a rejoint le lobby`,
           time: now(),
         });
+
+        // Broadcast lobby update
         broadcast(ws.lobbyCode, {
           type: "lobby",
           players: lobby.players,
@@ -300,165 +204,11 @@ wss.on("connection", (ws) => {
           queue: lobby.queue.map((q) => q.pseudo),
           code: ws.lobbyCode,
         });
+
+        // Evaluate timers after the modification
+        if (lobby && lobby.timer) lobby.timer.evaluate();
       }
-    }
-
-    if (data.type === "color") {
-      let code = ws.lobbyCode;
-      let lobby = lobbys[code];
-      if (!lobby) return;
-      let requestedColor = Number(data.color);
-      if (Number.isNaN(requestedColor)) return;
-
-      const p = lobby.players.find((p) => p.id === id);
-      if (!p) return;
-
-      // Check if the requested color is already used by another player
-      const takenBy = lobby.players.find(
-        (pl) => pl.color === requestedColor && pl.id !== id
-      );
-      if (takenBy) {
-        // refuse and notify requester
-        ws.send(
-          JSON.stringify({
-            type: "colorRejected",
-            color: requestedColor,
-            reason: `La couleur ${
-              COLOR_NAMES[requestedColor] || requestedColor
-            } est déjà utilisée par ${takenBy.pseudo}.`,
-          })
-        );
-        lobby.chat.push({
-          system: true,
-          text: `${p.pseudo} a essayé de choisir ${
-            COLOR_NAMES[requestedColor] || requestedColor
-          } mais elle est déjà prise par ${takenBy.pseudo}.`,
-          time: now(),
-        });
-        broadcast(code, {
-          type: "lobby",
-          players: lobby.players,
-          chat: lobby.chat,
-          queue: lobby.queue.map((q) => q.pseudo),
-          code,
-        });
-        return;
-      }
-
-      // Accept color
-      p.color = requestedColor;
-      lobby.chat.push({
-        system: true,
-        text: `${p.pseudo} a choisi la couleur ${
-          COLOR_NAMES[requestedColor] || requestedColor
-        }.`,
-        time: now(),
-      });
-
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
-    }
-
-    if (data.type === "ready") {
-      let code = ws.lobbyCode;
-      let lobby = lobbys[code];
-      if (!lobby) return;
-      let p = lobby.players.find((p) => p.id === id);
-      if (!p) return;
-
-      // Do nothing if game already started
-      if (lobby.state === "in-game") {
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            message: "La partie est déjà en cours.",
-          })
-        );
-        return;
-      }
-
-      // Toggle ready
-      p.ready = !p.ready;
-      lobby.chat.push({
-        system: true,
-        text: `${p.pseudo} ${p.ready ? "est prêt" : "n'est plus prêt"}`,
-        time: now(),
-      });
-
-      const readyCount = lobby.players.filter((pl) => pl.ready).length;
-
-      if (p.ready) {
-        // If this is the first ready -> start waiting20 (unless countdown already running)
-        if (
-          readyCount === 1 &&
-          !lobby.timers.waiting20Interval &&
-          !lobby.timers.countdown10
-        ) {
-          lobby.chat.push({
-            system: true,
-            text: `1 joueur est prêt — début d'une phase de préparation de 20s.`,
-            time: now(),
-          });
-          startWaiting20(code);
-        }
-        // If we have enough players ready immediately -> start countdown10
-        if (readyCount >= 2 && !lobby.timers.countdown10) {
-          startCountdown10(code);
-        }
-      } else {
-        // player unready: compute after-change readyCount
-        // If nobody is ready anymore -> cancel waiting20
-        if (readyCount === 0) {
-          if (lobby.timers.waiting20Interval) {
-            cancelWaiting20(code);
-          }
-        }
-
-        // If countdown is running and now < 2 ready -> stop countdown
-        if (readyCount < 2 && lobby.timers.countdown10) {
-          // stop countdown
-          stopCountdown10(code);
-          // After stopping countdown, if one player remains ready, we should start the 20s preparation for them
-          if (readyCount === 1) {
-            // start waiting20 only if not already started
-            if (!lobby.timers.waiting20Interval && !lobby.timers.countdown10) {
-              lobby.chat.push({
-                system: true,
-                text: `Il reste 1 joueur prêt — relance de la préparation (20s).`,
-                time: now(),
-              });
-              startWaiting20(code);
-            }
-          }
-        } else {
-          // countdown was not running but one player remains ready -> ensure waiting20 exists
-          if (
-            readyCount === 1 &&
-            !lobby.timers.waiting20Interval &&
-            !lobby.timers.countdown10
-          ) {
-            lobby.chat.push({
-              system: true,
-              text: `Il reste 1 joueur prêt — début d'une phase de préparation de 20s.`,
-              time: now(),
-            });
-            startWaiting20(code);
-          }
-        }
-      }
-
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
+      return;
     }
 
     if (data.type === "exitToLobby") {
@@ -486,41 +236,99 @@ wss.on("connection", (ws) => {
         queue: lobby.queue.map((q) => q.pseudo),
         code,
       });
+      return;
+    }
+
+    if (data.type === "ready") {
+      let code = ws.lobbyCode;
+      let lobby = lobbys[code];
+      if (!lobby) return;
+      let p = lobby.players.find((p) => p.id === id);
+      if (p) {
+        p.ready = !p.ready;
+        lobby.chat.push({
+          system: true,
+          text: `${p.pseudo} ${p.ready ? "est prêt" : "n'est plus prêt"}`,
+          time: now(),
+        });
+      }
+
+      // Broadcast update
+      broadcast(code, {
+        type: "lobby",
+        players: lobby.players,
+        chat: lobby.chat,
+        queue: lobby.queue.map((q) => q.pseudo),
+        code,
+      });
+
+      // Evaluate timers after ready toggle
+      if (lobby.timer) lobby.timer.evaluate();
+      return;
+    }
+
+    if (data.type === "color") {
+      let code = ws.lobbyCode;
+      let lobby = lobbys[code];
+      let p = lobby && lobby.players.find((p) => p.id === id);
+      if (p && typeof data.color === "number") {
+        p.color = data.color;
+      }
+      // Broadcast update
+      broadcast(code, {
+        type: "lobby",
+        players: lobby.players,
+        chat: lobby.chat,
+        queue: lobby.queue.map((q) => q.pseudo),
+        code,
+      });
+      return;
+    }
+
+    if (data.type === "create") {
+      // simple alias to join with create:true
+      ws.emit?.(
+        "message",
+        JSON.stringify({ ...data, type: "join", create: true })
+      );
+      return;
     }
   });
 
   ws.on("close", () => {
     const code = ws.lobbyCode;
-    if (!code || !lobbys[code]) {
+    if (!code) {
       broadcastPlayerCountAll();
       return;
     }
     const lobby = lobbys[code];
-    lobby.players = lobby.players.filter((p) => p.id !== id);
-    lobby.queue = lobby.queue.filter((q) => q.id !== id);
-    lobby.chat.push({
-      system: true,
-      text: `Un joueur a quitté le lobby`,
-      time: now(),
-    });
-
-    // If not enough players, cancel timers appropriately
-    const readyCount = lobby.players.filter((pl) => pl.ready).length;
-    if (readyCount < 1) {
-      if (lobby.timers.waiting20Interval) {
-        clearInterval(lobby.timers.waiting20Interval);
-        lobby.timers.waiting20Interval = null;
-      }
-    }
-    if (readyCount < 2) {
-      if (lobby.timers.countdown10) {
-        clearInterval(lobby.timers.countdown10);
-        lobby.timers.countdown10 = null;
-        lobby.state = "lobby";
-        broadcast(code, { type: "countdownCancelled" });
-      }
+    if (!lobby) {
+      broadcastPlayerCountAll();
+      return;
     }
 
+    const idx = lobby.players.findIndex((p) => p.id === id);
+    if (idx !== -1) {
+      const leaving = lobby.players.splice(idx, 1)[0];
+      lobby.chat.push({
+        system: true,
+        text: `${leaving.pseudo} a quitté le lobby`,
+        time: now(),
+      });
+    } else {
+      // Also try to remove from queue if present
+      const qidx = lobby.queue.findIndex((q) => q.id === id);
+      if (qidx !== -1) {
+        const waiting = lobby.queue.splice(qidx, 1)[0];
+        lobby.chat.push({
+          system: true,
+          text: `${waiting.pseudo} a quitté la file d'attente`,
+          time: now(),
+        });
+      }
+    }
+
+    // Broadcast updated lobby and re-evaluate timers
     broadcast(code, {
       type: "lobby",
       players: lobby.players,
@@ -528,6 +336,11 @@ wss.on("connection", (ws) => {
       queue: lobby.queue.map((q) => q.pseudo),
       code,
     });
+
+    if (lobby.timer) lobby.timer.evaluate();
+
     broadcastPlayerCountAll();
   });
 });
+
+console.log("WebSocket server listening on ws://localhost:9001");
