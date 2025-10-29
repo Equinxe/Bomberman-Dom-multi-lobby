@@ -138,3 +138,20 @@ body::-webkit-scrollbar-thumb {
   background: #163013;
   border-radius: 8px;
 }
+
+/* Evite que le bouton prêt chevauche la preview */
+.lobby-player-list .player-card {
+  position: relative;
+  z-index: 1;
+}
+
+/* S'assure que la zone preview a toujours son espace */
+.lobby-player-list .player-card > div {
+  z-index: 2;
+}
+
+/* Style global pour le sprite wrapper si besoin */
+.sprite-wrap, .sprite-sheet {
+  image-rendering: pixelated;
+  display: inline-block;
+}

@@ -1,6 +1,5 @@
-// main.js (extrait / remplace votre main.js complet par ce fichier si vous voulez
-// la version intégrale modifiée — ici j'inclus tout le fichier pour être sûr)
-import { render } from "../Core/dom.js";
+// main.js (modifié pour utiliser multiplayer/socket.js)
+import { render, createElement } from "../Core/dom.js";
 import { Nickname } from "./ui/nickname.js";
 import { Lobby } from "./ui/lobby.js";
 import { WaitingRoom } from "./ui/waitingroom.js";
@@ -9,10 +8,12 @@ import { PopupError } from "./ui/popup.js";
 import { setState, getState } from "../Core/state.js";
 import { registerEvent, getEventsMap } from "../Core/events.js";
 import { GamePlaceholder } from "./ui/gamePlaceholder.js";
+import { socket } from "./multiplayer/socket.js";
+
+window.createElement = createElement; // Réutilise l'implémentation centrale
 
 let lobbyState = { players: [], chat: [], queue: [], code: "" };
 const container = document.getElementById("app");
-let wsSocket; // Unique WebSocket for the whole session
 let localColor = 0;
 let wsConnected = false;
 let playerCount = 1;
@@ -21,7 +22,6 @@ let lastErrorPopup = null;
 // helper: preserve chat draft (value + selection + focus) across renders
 function withPreservedChatDraft(renderFn) {
   try {
-    // try to find chat input pre-render
     const oldInput =
       document.querySelector('input[name="message"]') ||
       document.getElementById("lobby-chat-input");
@@ -40,56 +40,28 @@ function withPreservedChatDraft(renderFn) {
       hadFocus = document.activeElement === oldInput;
     }
 
-    // call actual render function (which will replace DOM)
     renderFn();
 
-    // restore to the new input if present
     const newInput =
       document.querySelector('input[name="message"]') ||
       document.getElementById("lobby-chat-input");
     if (newInput && draft !== null) {
       newInput.value = draft;
       try {
-        // clamp selection to length
         const len = newInput.value.length;
         const s = Math.min(selStart, len);
         const e = Math.min(selEnd, len);
         newInput.setSelectionRange(s, e);
-      } catch (e) {
-        // ignore if not supported
-      }
+      } catch (e) {}
       if (hadFocus) {
         newInput.focus();
       }
     }
   } catch (err) {
-    // fallback: just render, and avoid crashing the app
     console.error("withPreservedChatDraft error:", err);
     renderFn();
   }
 }
-
-window.createElement = function createElement(vnode) {
-  if (typeof vnode === "string") return document.createTextNode(vnode);
-  const el = document.createElement(vnode.tag);
-  if (vnode.attrs) {
-    for (const [k, v] of Object.entries(vnode.attrs)) {
-      if (k === "style") el.setAttribute("style", v);
-      else el.setAttribute(k, v);
-    }
-  }
-  if (vnode.events) {
-    for (const [event, handler] of Object.entries(vnode.events)) {
-      el.addEventListener(event, window[handler]);
-    }
-  }
-  if (vnode.children) {
-    for (const child of vnode.children) {
-      el.appendChild(window.createElement(child));
-    }
-  }
-  return el;
-};
 
 function showNicknameForm() {
   render(Nickname({ onSubmit: handleSubmit }), container, getEventsMap());
@@ -128,77 +100,83 @@ function showPopupError(message) {
   }, 3000);
 }
 
-function openMainSocket() {
-  function connectWS() {
-    wsSocket = new WebSocket("ws://localhost:9001");
-    wsSocket.addEventListener("open", () => {
-      wsConnected = true;
-      showWSIndicator();
-    });
-    wsSocket.addEventListener("close", () => {
-      wsConnected = false;
-      showWSIndicator();
-      setTimeout(() => {
-        connectWS();
-      }, 1000);
-    });
-    wsSocket.addEventListener("message", (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === "playerCountAll") {
-        playerCount = data.count;
-        showWSIndicator();
-      }
-      if (data.type === "lobby" || data.type === "waiting") {
-        handleLobbyUpdate(data.players, data.chat, data.queue, data, data.code);
-      }
-      if (data.type === "error") {
-        showPopupError(data.message || "Erreur inconnue");
-      }
+function attachSocketHandlers() {
+  socket.on("open", () => {
+    wsConnected = true;
+    showWSIndicator();
+  });
 
-      // waiting (20s) handlers
-      if (data.type === "waitingStarted") {
-        showLobbyCountdown(data.duration, "Préparation");
-      }
-      if (data.type === "waitingTick") {
-        showLobbyCountdown(data.value, "Préparation");
-      }
+  socket.on("close", () => {
+    wsConnected = false;
+    showWSIndicator();
+  });
 
-      // countdown (10s) handlers
-      if (data.type === "countdownStart") {
-        showLobbyCountdown(data.value, "Démarrage");
-      }
-      if (data.type === "countdownTick") {
-        showLobbyCountdown(data.value, "Démarrage");
-      }
+  socket.on("message", (data) => {
+    // generic message handler if needed
+  });
 
-      if (
-        data.type === "waitingCancelled" ||
-        data.type === "countdownCancelled"
-      ) {
-        hideLobbyCountdown();
-      }
-      if (data.type === "gameStart") {
-        hideLobbyCountdown();
-        render(
-          GamePlaceholder({
-            players: data.players || [],
-            mapSeed: data.mapSeed || null,
-          }),
-          container,
-          getEventsMap()
-        );
-        showWSIndicator();
-      }
+  socket.on("playerCountAll", (data) => {
+    playerCount = data.count;
+    showWSIndicator();
+  });
 
-      // colorRejected popup quick feedback
-      if (data.type === "colorRejected") {
-        showPopupError(data.reason || "Couleur refusée");
-      }
-    });
-  }
-  connectWS();
+  socket.on("lobby", (data) => {
+    handleLobbyUpdate(
+      data.players || [],
+      data.chat || [],
+      data.queue || [],
+      data,
+      data.code
+    );
+  });
 
-  // Global click delegation for color buttons (data-idx attribute set in ui/colorselector.js)
+  socket.on("waiting", (data) => {
+    handleLobbyUpdate(
+      data.players || [],
+      data.chat || [],
+      data.queue || [],
+      data,
+      data.code
+    );
+  });
+
+  socket.on("error", (data) => {
+    showPopupError(data.message || "Erreur WebSocket");
+  });
+
+  socket.on("waitingStarted", (data) =>
+    showLobbyCountdown(data.duration, "Préparation")
+  );
+  socket.on("waitingTick", (data) =>
+    showLobbyCountdown(data.value, "Préparation")
+  );
+  socket.on("countdownStart", (data) =>
+    showLobbyCountdown(data.value, "Démarrage")
+  );
+  socket.on("countdownTick", (data) =>
+    showLobbyCountdown(data.value, "Démarrage")
+  );
+  socket.on("waitingCancelled", hideLobbyCountdown);
+  socket.on("countdownCancelled", hideLobbyCountdown);
+
+  socket.on("gameStart", (data) => {
+    hideLobbyCountdown();
+    render(
+      GamePlaceholder({
+        players: data.players || [],
+        mapSeed: data.mapSeed || null,
+      }),
+      container,
+      getEventsMap()
+    );
+    showWSIndicator();
+  });
+
+  socket.on("colorRejected", (data) => {
+    showPopupError(data.reason || "Couleur refusée");
+  });
+
+  // global click delegation for color buttons
   document.addEventListener("click", (ev) => {
     const btn = ev.target.closest("[data-idx]");
     if (btn) {
@@ -211,9 +189,7 @@ function openMainSocket() {
 }
 
 function sendWS(type, payload) {
-  if (wsSocket && wsSocket.readyState === 1) {
-    wsSocket.send(JSON.stringify({ type, ...payload }));
-  }
+  socket.send(type, payload);
 }
 
 function handleSubmit(e, opts = {}) {
@@ -280,7 +256,6 @@ function registerLobbyEvents() {
   registerEvent("handleReady", handleReady);
   registerEvent("handleSendMessage", handleSendMessage);
   registerEvent("handleSubmit", handleSubmit);
-  // NOTE: window.handleExitGame is already defined globally at top
 }
 
 function showLobby() {
@@ -305,7 +280,6 @@ function showLobby() {
     return;
   }
   registerLobbyEvents();
-  // use the helper to preserve chat draft across re-renders
   withPreservedChatDraft(() =>
     render(
       Lobby({
@@ -355,5 +329,7 @@ function hideLobbyCountdown() {
   if (el) el.style.display = "none";
 }
 
-openMainSocket();
+// initialisation socket et UI
+attachSocketHandlers();
+socket.init("ws://localhost:9001");
 showNicknameForm();
