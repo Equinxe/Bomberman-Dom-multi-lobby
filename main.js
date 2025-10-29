@@ -1,3 +1,5 @@
+// main.js (extrait / remplace votre main.js complet par ce fichier si vous voulez
+// la version intégrale modifiée — ici j'inclus tout le fichier pour être sûr)
 import { render } from "../Core/dom.js";
 import { Nickname } from "./ui/nickname.js";
 import { Lobby } from "./ui/lobby.js";
@@ -6,6 +8,7 @@ import { WSIndicator } from "./ui/wsindicator.js";
 import { PopupError } from "./ui/popup.js";
 import { setState, getState } from "../Core/state.js";
 import { registerEvent, getEventsMap } from "../Core/events.js";
+import { GamePlaceholder } from "./ui/gamePlaceholder.js";
 
 let lobbyState = { players: [], chat: [], queue: [], code: "" };
 const container = document.getElementById("app");
@@ -14,6 +17,57 @@ let localColor = 0;
 let wsConnected = false;
 let playerCount = 1;
 let lastErrorPopup = null;
+
+// helper: preserve chat draft (value + selection + focus) across renders
+function withPreservedChatDraft(renderFn) {
+  try {
+    // try to find chat input pre-render
+    const oldInput =
+      document.querySelector('input[name="message"]') ||
+      document.getElementById("lobby-chat-input");
+    let draft = null;
+    let selStart = 0;
+    let selEnd = 0;
+    let hadFocus = false;
+    if (oldInput) {
+      draft = oldInput.value;
+      try {
+        selStart = oldInput.selectionStart;
+        selEnd = oldInput.selectionEnd;
+      } catch (e) {
+        selStart = selEnd = draft.length;
+      }
+      hadFocus = document.activeElement === oldInput;
+    }
+
+    // call actual render function (which will replace DOM)
+    renderFn();
+
+    // restore to the new input if present
+    const newInput =
+      document.querySelector('input[name="message"]') ||
+      document.getElementById("lobby-chat-input");
+    if (newInput && draft !== null) {
+      newInput.value = draft;
+      try {
+        // clamp selection to length
+        const len = newInput.value.length;
+        const s = Math.min(selStart, len);
+        const e = Math.min(selEnd, len);
+        newInput.setSelectionRange(s, e);
+      } catch (e) {
+        // ignore if not supported
+      }
+      if (hadFocus) {
+        newInput.focus();
+      }
+    }
+  } catch (err) {
+    // fallback: just render, and avoid crashing the app
+    console.error("withPreservedChatDraft error:", err);
+    renderFn();
+  }
+}
 
 window.createElement = function createElement(vnode) {
   if (typeof vnode === "string") return document.createTextNode(vnode);
@@ -100,9 +154,60 @@ function openMainSocket() {
       if (data.type === "error") {
         showPopupError(data.message || "Erreur inconnue");
       }
+
+      // waiting (20s) handlers
+      if (data.type === "waitingStarted") {
+        showLobbyCountdown(data.duration, "Préparation");
+      }
+      if (data.type === "waitingTick") {
+        showLobbyCountdown(data.value, "Préparation");
+      }
+
+      // countdown (10s) handlers
+      if (data.type === "countdownStart") {
+        showLobbyCountdown(data.value, "Démarrage");
+      }
+      if (data.type === "countdownTick") {
+        showLobbyCountdown(data.value, "Démarrage");
+      }
+
+      if (
+        data.type === "waitingCancelled" ||
+        data.type === "countdownCancelled"
+      ) {
+        hideLobbyCountdown();
+      }
+      if (data.type === "gameStart") {
+        hideLobbyCountdown();
+        render(
+          GamePlaceholder({
+            players: data.players || [],
+            mapSeed: data.mapSeed || null,
+          }),
+          container,
+          getEventsMap()
+        );
+        showWSIndicator();
+      }
+
+      // colorRejected popup quick feedback
+      if (data.type === "colorRejected") {
+        showPopupError(data.reason || "Couleur refusée");
+      }
     });
   }
   connectWS();
+
+  // Global click delegation for color buttons (data-idx attribute set in ui/colorselector.js)
+  document.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-idx]");
+    if (btn) {
+      const idx = Number(btn.getAttribute("data-idx"));
+      if (!Number.isNaN(idx)) {
+        sendWS("color", { color: idx });
+      }
+    }
+  });
 }
 
 function sendWS(type, payload) {
@@ -175,6 +280,7 @@ function registerLobbyEvents() {
   registerEvent("handleReady", handleReady);
   registerEvent("handleSendMessage", handleSendMessage);
   registerEvent("handleSubmit", handleSubmit);
+  // NOTE: window.handleExitGame is already defined globally at top
 }
 
 function showLobby() {
@@ -183,35 +289,70 @@ function showLobby() {
     return;
   }
   if (lobbyState.waiting) {
-    render(
-      WaitingRoom({
-        position: lobbyState.queuePosition,
-        queue: lobbyState.queue,
-        pseudo: getState().nickname,
-        code: lobbyState.code,
-      }),
-      container,
-      getEventsMap()
+    withPreservedChatDraft(() =>
+      render(
+        WaitingRoom({
+          position: lobbyState.queuePosition,
+          queue: lobbyState.queue,
+          pseudo: getState().nickname,
+          code: lobbyState.code,
+        }),
+        container,
+        getEventsMap()
+      )
     );
     showWSIndicator();
     return;
   }
   registerLobbyEvents();
-  render(
-    Lobby({
-      code: lobbyState.code,
-      nickname: getState().nickname,
-      players: lobbyState.players,
-      chat: lobbyState.chat,
-      localColor,
-      queue: lobbyState.queue,
-      waiting: false,
-      queuePosition: 0,
-    }),
-    container,
-    getEventsMap()
+  // use the helper to preserve chat draft across re-renders
+  withPreservedChatDraft(() =>
+    render(
+      Lobby({
+        code: lobbyState.code,
+        nickname: getState().nickname,
+        players: lobbyState.players,
+        chat: lobbyState.chat,
+        localColor,
+        queue: lobbyState.queue,
+        waiting: false,
+        queuePosition: 0,
+      }),
+      container,
+      getEventsMap()
+    )
   );
   showWSIndicator();
+}
+
+// Small overlay for lobby countdown / waiting
+function showLobbyCountdown(value, label = "Démarrage") {
+  let el = document.getElementById("lobby-countdown");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "lobby-countdown";
+    el.style = `
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 9999;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 16px;
+      box-shadow: 0 8px 28px #000;
+    `;
+    document.body.appendChild(el);
+  }
+  el.textContent = `${label} : ${value}s`;
+  el.style.display = "block";
+}
+
+function hideLobbyCountdown() {
+  const el = document.getElementById("lobby-countdown");
+  if (el) el.style.display = "none";
 }
 
 openMainSocket();

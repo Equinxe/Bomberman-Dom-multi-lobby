@@ -7,6 +7,7 @@ import {
   PLAYER_COLORS,
 } from "./constants.js";
 import { registerEvent } from "../Core/events.js";
+import { ColorSelector } from "./colorselector.js";
 
 export function Lobby({
   code,
@@ -83,6 +84,12 @@ export function Lobby({
         100% { filter: brightness(1.0); }
       }
       .copied { filter: drop-shadow(0 0 12px #5cff6c); background: #5cff6c !important; color: #222 !important; }
+
+      /* Small helpers to ensure preview area and ready button spacing */
+      .player-card { position: relative; z-index: 1; }
+      .player-preview-wrap { z-index: 2; }
+      .player-color-pills { margin-top: 6px; z-index: 3; }
+      .player-ready-wrap { margin-top: 8px; z-index: 2; }
     `;
     document.head.appendChild(style);
   }
@@ -107,6 +114,131 @@ export function Lobby({
     }, 1100);
   }
   registerEvent("handleCopyLobbyCode", handleCopyLobbyCode);
+
+  // helper pour créer la preview animée (frames 0..2)
+  // -> pixel-perfect cropping to hide 1px artifact; change adjustPx to -1/0/1 to tune
+  function PlayerPreview({ colorIdx, uniqueId }) {
+    const margin = 4; // offset initial for frame 0 (source pixels)
+    const spacing = 1; // 1px gap between frames in sheet
+    const framesCount = 3; // frames 0,1,2
+    const frameSize = SPRITE_SIZE; // source frame size (e.g. 24)
+
+    // Display size: crop to 23x23 (so we hide one source pixel border)
+    const displayFrameSize = frameSize - 1; // 23
+    const previewSize = displayFrameSize * SPRITE_ZOOM;
+
+    // Per-frame tweak: if you still see the artifact, try -1 / 0 / +1
+    // -1 shifts frames left on the source, +1 shifts right.
+    let adjustPx = 0; // default 0 — change to 1 if you still see left artifact, -1 if right artifact
+    // Example testing values: adjustPx = 0; // or 1; // or -1;
+
+    // Speed of discrete frames (ms)
+    const tickMs = 260;
+
+    // get row and optional offsetY from SPRITE_ROWS
+    const row = SPRITE_ROWS[colorIdx] ? SPRITE_ROWS[colorIdx].row : 0;
+    const offsetY = SPRITE_ROWS[colorIdx]
+      ? SPRITE_ROWS[colorIdx].offsetY || 0
+      : 0;
+
+    // Compute Y in source sheet
+    const posY = margin + row * (frameSize + spacing) + offsetY;
+
+    // Compute source X for each frame and apply optional adjustPx for n>0
+    const frameXs = [];
+    for (let n = 0; n < framesCount; n++) {
+      const base = margin + n * (frameSize + spacing);
+      // apply tweak only to n>0 frames (common case of 1px artifact between frames)
+      const corrected = n > 0 ? base + adjustPx : base;
+      frameXs.push(corrected);
+    }
+
+    // Now compute the source X cropping offset to avoid exposing neighbor pixels:
+    // We want the cropped window to show displayFrameSize pixels from the left side of the frame.
+    // So the visible left pixel in source = frameX (no extra centering) -> cropping will hide the rightmost source pixel.
+    // If you'd rather crop a different side, modify cropShift (0 or 1).
+    const cropShift = 0; // 0 keeps left part, hiding rightmost column; 1 keeps right part, hiding leftmost
+
+    // source-left-to-display-left in source pixels:
+    const displayOffsetPerFrame = frameXs.map((frameX) => frameX + cropShift);
+
+    // Convert to CSS background-position negative px with zoom applied
+    const posYpx = -posY * SPRITE_ZOOM;
+    const framePositionsPx = displayOffsetPerFrame.map(
+      (x) => `-${x * SPRITE_ZOOM}px ${posYpx}px`
+    );
+
+    // Secure id and bg size
+    const safeId = `preview_${String(uniqueId).replace(
+      /[^a-z0-9_-]/gi,
+      ""
+    )}_${Math.random().toString(36).slice(2, 6)}`;
+    const bgSizeX = SHEET_WIDTH * SPRITE_ZOOM;
+    const bgSizeY = SHEET_HEIGHT * SPRITE_ZOOM;
+
+    // Inline script: discrete swap of background-position to show exact frames
+    const scriptContent = `
+(function(){
+  const el = document.getElementById("${safeId}");
+  if (!el) return;
+  const frames = ${JSON.stringify(framePositionsPx)};
+  let idx = 0;
+  el.style.backgroundPosition = frames[0];
+  const iv = setInterval(() => {
+    idx = (idx + 1) % frames.length;
+    el.style.backgroundPosition = frames[idx];
+  }, ${tickMs});
+  el.__previewInterval = iv;
+  const ro = new MutationObserver(() => {
+    if (!document.getElementById("${safeId}")) {
+      clearInterval(iv);
+      ro.disconnect();
+    }
+  });
+  ro.observe(document.body, { childList: true, subtree: true });
+})();
+`.trim();
+
+    return {
+      tag: "div",
+      attrs: {
+        class: "player-preview-wrap",
+        style: `
+          width: ${previewSize}px;
+          height: ${previewSize}px;
+          overflow: hidden;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+        `,
+      },
+      children: [
+        {
+          // inner window: visible cropped area (displayFrameSize * zoom)
+          tag: "div",
+          attrs: {
+            id: safeId,
+            style: `
+              width: ${previewSize}px;
+              height: ${previewSize}px;
+              background-image: url('./assets/images/Players.png');
+              background-position: ${framePositionsPx[0]};
+              background-size: ${bgSizeX}px ${bgSizeY}px;
+              background-repeat: no-repeat;
+              image-rendering: pixelated;
+              border-radius:6px;
+            `,
+          },
+        },
+        { tag: "script", children: [scriptContent] },
+      ],
+    };
+  }
+
+  // taken colors for disabling pastilles (exclude own color to allow re-select)
+  const takenColors = players
+    .map((p) => (typeof p.color === "number" ? p.color : -1))
+    .filter((c) => c >= 0);
 
   return {
     tag: "div",
@@ -164,7 +296,7 @@ export function Lobby({
             },
             children: [`Joueurs (${players.length}/4)`],
           },
-          // CODE DU LOBBY COPIABLE SANS ICONE
+          // CODE DU LOBBY COPIABLE
           {
             tag: "div",
             attrs: {
@@ -196,7 +328,7 @@ export function Lobby({
                   id: "copy-lobby-btn",
                   type: "button",
                   class: "lobby-copy-btn",
-                  style: `
+                  style: `          
                     margin-left:4px;
                     padding: 3px 12px;
                     font-size:17px;
@@ -218,7 +350,7 @@ export function Lobby({
           },
           // BARRE DE PROGRESSION WAITING
           waiting ? ProgressBar({ percent: progressPercent }) : null,
-          // GRILLE JOUEURS - ESPACÉE, EFFET HOVER
+          // GRID JOUEURS
           {
             tag: "div",
             attrs: {
@@ -238,13 +370,17 @@ export function Lobby({
             children: [0, 1, 2, 3].map((i) => {
               const isMe = !fullPlayers[i].empty && i === myIndex;
               const colorToUse = fullPlayers[i].color;
+              const uniquePreviewId = `${i}_${colorToUse}_${
+                fullPlayers[i].id || ""
+              }`;
+
               return {
                 tag: "div",
                 attrs: {
                   style: `
                     background: rgba(48,255,180,0.11);
                     border-radius: 22px;
-                    padding: 34px 18px 34px 18px;
+                    padding: 24px 18px 18px 18px;
                     min-width: 240px;
                     max-width: 320px;
                     min-height: 180px;
@@ -253,7 +389,7 @@ export function Lobby({
                     display: flex;
                     flex-direction: column;
                     align-items: center;
-                    justify-content: center;
+                    justify-content: flex-start;
                     border: ${
                       fullPlayers[i].empty
                         ? "2px dashed #3be6aa66"
@@ -262,7 +398,7 @@ export function Lobby({
                     position: relative;
                     transition: box-shadow .2s, background .2s;
                   `,
-                  class: "lobby-player-block",
+                  class: "lobby-player-block player-card",
                 },
                 children: [
                   {
@@ -285,55 +421,107 @@ export function Lobby({
                     },
                     children: [fullPlayers[i].pseudo || "En attente..."],
                   },
+
+                  // preview + color selector (if player exists)
                   !fullPlayers[i].empty
                     ? {
                         tag: "div",
                         attrs: {
-                          id: `player-sprite-${i}`,
-                          style: `
-                            width: ${SPRITE_SIZE * SPRITE_ZOOM}px;
-                            height: ${SPRITE_SIZE * SPRITE_ZOOM}px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            margin-bottom: 12px;
-                            background: url('./assets/images/Players.png');
-                            background-repeat: no-repeat;
-                            background-position: -4px -${
-                              SPRITE_ROWS[colorToUse].row * (SPRITE_SIZE + 1) +
-                              SPRITE_ROWS[colorToUse].offsetY
-                            }px;
-                            background-size: ${SHEET_WIDTH * SPRITE_ZOOM}px ${
-                            SHEET_HEIGHT * SPRITE_ZOOM
-                          }px;
-                            border-radius:12px;
-                          `,
+                          style:
+                            "display:flex;flex-direction:column;align-items:center;justify-content:center;",
                         },
-                        children: [],
+                        children: [
+                          // preview area sized to cropped 23x23 * zoom
+                          {
+                            tag: "div",
+                            attrs: {
+                              style: `width:${
+                                (SPRITE_SIZE - 1) * SPRITE_ZOOM
+                              }px;height:${
+                                (SPRITE_SIZE - 1) * SPRITE_ZOOM
+                              }px;padding:0;box-sizing:border-box;background:transparent;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:6px;overflow:hidden;`,
+                            },
+                            children: [
+                              PlayerPreview({
+                                colorIdx: colorToUse,
+                                uniqueId: uniquePreviewId,
+                              }),
+                            ],
+                          },
+
+                          // color selector for the local player only
+                          ...(isMe
+                            ? [
+                                {
+                                  tag: "div",
+                                  attrs: {
+                                    class: "player-color-pills",
+                                    style:
+                                      "display:flex;justify-content:center;align-items:center;",
+                                  },
+                                  children: [
+                                    ColorSelector({
+                                      selected: fullPlayers[i].color,
+                                      takenColors,
+                                      showLabels: false,
+                                    }),
+                                  ],
+                                },
+                              ]
+                            : [
+                                {
+                                  tag: "div",
+                                  attrs: {
+                                    style:
+                                      "width:12px;height:12px;border-radius:50%;background:" +
+                                      (PLAYER_COLORS[colorToUse] &&
+                                      PLAYER_COLORS[colorToUse].hex
+                                        ? PLAYER_COLORS[colorToUse].hex
+                                        : "#ff69b4") +
+                                      ";box-shadow:0 0 6px rgba(0,0,0,0.25);margin-top:6px;",
+                                  },
+                                },
+                              ]),
+                        ],
                       }
                     : null,
+
+                  // Ready button (kept per-card; will be below the colorSelector)
                   isMe
                     ? {
-                        tag: "button",
+                        tag: "div",
                         attrs: {
-                          style: `
-                            margin-top:18px;
-                            padding:18px 44px;
-                            font-size:22px;
-                            border-radius:12px;
-                            background:linear-gradient(90deg,#45ffc0 0%,#267c5c 100%);
-                            color:#1d2820;
-                            border:none;
-                            cursor:pointer;
-                            font-family:'Press Start 2P',monospace;
-                          `,
-                          class:
-                            "lobby-ready-btn" +
-                            (fullPlayers[myIndex].ready ? " anim" : ""),
+                          class: "player-ready-wrap",
+                          style: "margin-top:8px;",
                         },
-                        events: { click: "handleReady" },
                         children: [
-                          fullPlayers[myIndex].ready ? "Annuler prêt" : "Prêt",
+                          {
+                            tag: "button",
+                            attrs: {
+                              style: `
+                                padding:14px 40px;
+                                font-size:18px;
+                                border-radius:12px;
+                                background:linear-gradient(90deg,#45ffc0 0%,#267c5c 100%);
+                                color:#1d2820;
+                                border:none;
+                                cursor:pointer;
+                                font-family:'Press Start 2P',monospace;
+                              `,
+                              class:
+                                "lobby-ready-btn" +
+                                (fullPlayers[myIndex] &&
+                                fullPlayers[myIndex].ready
+                                  ? " anim"
+                                  : ""),
+                            },
+                            events: { click: "handleReady" },
+                            children: [
+                              fullPlayers[myIndex] && fullPlayers[myIndex].ready
+                                ? "Annuler prêt"
+                                : "Prêt",
+                            ],
+                          },
                         ],
                       }
                     : null,

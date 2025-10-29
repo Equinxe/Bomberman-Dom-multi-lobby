@@ -1,45 +1,74 @@
-import { PLAYER_COLORS } from "./constants.js";
+// ColorSelector component
+// Props:
+// - selected: number (index of currently selected color for this client)
+// - takenColors: array of indexes that are already selected by other players
+// - showLabels: optional boolean to show color names
+export function ColorSelector({
+  selected = 0,
+  takenColors = [],
+  showLabels = false,
+}) {
+  const COLORS = [
+    { name: "Blanc", hex: "#ffffff" },
+    { name: "Noir", hex: "#000000" },
+    { name: "Rouge", hex: "#ff3b3b" },
+    { name: "Bleu", hex: "#2d9cff" },
+    { name: "Vert", hex: "#2ecc71" },
+    { name: "Jaune", hex: "#ffd166" },
+  ];
 
-// Event delegation, pas de callback direct !
-export function ColorSelector({ selected, lockedColors }) {
   return {
     tag: "div",
     attrs: {
-      id: "color-selector",
-      style: `
-        display: flex;
-        gap: 18px;
-        justify-content: center;
-        align-items: center;
-        margin: 18px 0 32px 0;
-      `,
+      class: "color-selector",
+      style:
+        "display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;pointer-events:auto;",
     },
-    children: PLAYER_COLORS.map((color, idx) => ({
-      tag: "button",
-      attrs: {
-        type: "button",
-        "data-idx": idx,
-        disabled: lockedColors.includes(idx),
-        style: `
-          width: 32px;
-          height: 32px;
-          border-radius: 7px;
-          border: 3px solid ${
-            selected === idx
-              ? "#45ffc0"
-              : lockedColors.includes(idx)
-              ? "#444"
-              : "#222"
-          };
-          background: ${color.code};
-          cursor: ${lockedColors.includes(idx) ? "not-allowed" : "pointer"};
-          opacity: ${lockedColors.includes(idx) ? 0.4 : 1};
-          transition: border .15s;
-          ${selected === idx ? "box-shadow:0 0 8px #45ffc0;" : ""}
-        `,
-        title: color.name,
-      },
-      children: [],
-    })).filter(Boolean),
+    children: COLORS.map((c, idx) => {
+      const isTaken = takenColors.includes(idx) && idx !== selected; // allow if it's your own selected color
+      return {
+        tag: "div",
+        attrs: {
+          style: `display:flex;flex-direction:column;align-items:center;justify-content:center;`,
+        },
+        children: [
+          {
+            tag: "button",
+            attrs: {
+              "data-idx": String(idx),
+              title: c.name,
+              style: `
+                width:28px;height:28px;border-radius:50%;
+                border: ${
+                  selected === idx
+                    ? "3px solid rgba(50,255,200,0.95)"
+                    : "2px solid rgba(255,255,255,0.08)"
+                };
+                background:${c.hex};
+                cursor:${isTaken ? "not-allowed" : "pointer"};
+                box-shadow: ${
+                  isTaken
+                    ? "inset 0 0 0 2px rgba(0,0,0,0.25)"
+                    : "0 6px 18px rgba(0,0,0,0.08)"
+                };
+                opacity:${isTaken ? "0.35" : "1"};
+                outline:none;
+              `,
+            },
+          },
+          ...(showLabels
+            ? [
+                {
+                  tag: "span",
+                  attrs: {
+                    style: "font-size:11px;color:#bfffe6;margin-top:6px;",
+                  },
+                  children: [c.name],
+                },
+              ]
+            : []),
+        ],
+      };
+    }),
   };
 }
