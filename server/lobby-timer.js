@@ -1,20 +1,18 @@
 // server/lobby-timer.js
-// ESM version du timer de lobby. Compte N et R depuis getPlayersFn()
-// et vérifie l'état juste avant de lancer un countdown/gameStart.
-
-// Usage :
-// import { LobbyTimer } from '../server/lobby-timer.js';
-// const lobbyTimer = new LobbyTimer((type,payload)=> broadcast(code,{ type, ...payload }), () => lobby.players);
-// lobbyTimer.evaluate(); // appeler après chaque join/leave/ready toggle
-
-import WebSocket from "ws";
-
+// LobbyTimer: now calls an onStartGame callback when the waiting/countdown completes
+// instead of broadcasting a bare gameStart. This lets the server call the gameManager
+// to generate a fresh mapSeed and send a proper payload to clients.
+//
+// Constructor: new LobbyTimer(broadcastFn, getPlayersFn, onStartGameFn)
+// - broadcastFn(type, payload) -> emits to lobby (unchanged behavior for waiting/countdown events)
+// - getPlayersFn() -> returns current players array for the lobby
+// - onStartGameFn(opts) -> called when the lobby should start a game (opts: { reason, N, R })
 export class LobbyTimer {
-  // broadcastFn(type, payload) -> envoie aux clients de la lobby
-  // getPlayersFn() -> retourne l'array current des players pour la lobby (players[])
-  constructor(broadcastFn, getPlayersFn = () => []) {
+  constructor(broadcastFn, getPlayersFn = () => [], onStartGameFn = null) {
     this.broadcast = broadcastFn;
     this.getPlayersFn = getPlayersFn;
+    this.onStartGame =
+      typeof onStartGameFn === "function" ? onStartGameFn : null;
     this.timer = null; // { type: 'waiting'|'countdown', remaining, intervalId, timeoutId }
   }
 
@@ -26,7 +24,6 @@ export class LobbyTimer {
   }
 
   _counts() {
-    // On considère "present" = players array (ne pas confondre avec queue)
     const players = this.getPlayersFn() || [];
     const N = players.length;
     const R = players.filter((p) => !!p.ready).length;
@@ -34,11 +31,9 @@ export class LobbyTimer {
   }
 
   startWaiting(seconds = 20) {
-    // si déjà waiting, reset
     if (this.timer && this.timer.type === "waiting") {
       this.clearTimer();
     } else {
-      // si précédemment countdown, on annule
       if (this.timer && this.timer.type === "countdown") {
         this.broadcast("countdownCancelled", {});
         this.clearTimer();
@@ -62,20 +57,21 @@ export class LobbyTimer {
     }, 1000);
 
     this.timer.timeoutId = setTimeout(() => {
-      // Avant gameStart, re-vérifier l'état actuel
-      const { N, R } = this._counts();
+      const { N, R, players } = this._counts();
       this.clearTimer();
-      // Ici, la politique originale démarre la partie à la fin du waiting.
-      // On transmet aussi N/R pour diagnostic.
-      this.broadcast("gameStart", { reason: "waiting_timeout", N, R });
+      // Instead of broadcasting a raw gameStart, call onStartGame callback with context
+      if (this.onStartGame) {
+        this.onStartGame({ reason: "waiting_timeout", N, R, players });
+      } else {
+        // fallback: broadcast minimal gameStart (not recommended)
+        this.broadcast("gameStart", { reason: "waiting_timeout", N, R });
+      }
     }, seconds * 1000);
   }
 
   startCountdown(seconds = 10) {
-    // Vérifier la condition actuelle : tous les joueurs présents doivent être prêts
     const { N, R } = this._counts();
     if (!(R === N && N >= 2)) {
-      // condition non satisfaite : fallback
       if (R >= 1) {
         this.startWaiting(20);
       } else {
@@ -90,12 +86,10 @@ export class LobbyTimer {
       return;
     }
 
-    // annule waiting si besoin
     if (this.timer && this.timer.type === "waiting") {
       this.broadcast("waitingCancelled", {});
       this.clearTimer();
     } else if (this.timer && this.timer.type === "countdown") {
-      // déjà en countdown => on ne relance pas
       return;
     }
 
@@ -116,21 +110,26 @@ export class LobbyTimer {
     }, 1000);
 
     this.timer.timeoutId = setTimeout(() => {
-      // Avant d'émettre gameStart, re-vérifier N/R pour empêcher condition de course
-      const { N: N2, R: R2 } = this._counts();
+      const { N: N2, R: R2, players } = this._counts();
       this.clearTimer();
       if (R2 === N2 && N2 >= 2) {
-        this.broadcast("gameStart", { reason: "countdown_done", N: N2, R: R2 });
+        if (this.onStartGame) {
+          this.onStartGame({ reason: "countdown_done", N: N2, R: R2, players });
+        } else {
+          this.broadcast("gameStart", {
+            reason: "countdown_done",
+            N: N2,
+            R: R2,
+          });
+        }
       } else if (R2 >= 1 && R2 < N2) {
         this.startWaiting(20);
       } else {
-        // R2 === 0 => annulation finale
         this.broadcast("countdownCancelled", {});
       }
     }, seconds * 1000);
   }
 
-  // Appeler après chaque mutation du players[] du lobby
   evaluate() {
     const { N, R } = this._counts();
 

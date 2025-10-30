@@ -1,11 +1,14 @@
+// multiplayer/server.js
+// WebSocket server entrypoint for the multiplayer folder.
+// Listens on ws://localhost:9001
+// IMPORTANT: imports are relative to this file location (../server/...)
 import WebSocket, { WebSocketServer } from "ws";
-import { LobbyTimer } from "../server/lobby-timer.js"; // integration du timer robuste
+import { LobbyTimer } from "../server/lobby-timer.js";
+import { startGameForLobby } from "../server/gameManager.js";
 
 const wss = new WebSocketServer({ port: 9001 });
 
-let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'starting'|'in-game', timers:{}, waitingValue, countdownValue, timer: LobbyTimer } }
-
-const COLOR_NAMES = ["Blanc", "Noir", "Rouge", "Bleu", "Vert", "Jaune"];
+let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'in-game', timer: LobbyTimer } }
 
 function randLobbyCode() {
   return Math.random().toString(36).slice(2, 7).toUpperCase();
@@ -19,21 +22,33 @@ function now() {
   );
 }
 
-function broadcast(code, data) {
+/**
+ * Broadcast a typed payload to all clients in the lobby identified by `code`.
+ * `payload` should already include a `type` property.
+ */
+function broadcast(code, payload) {
+  const msg = JSON.stringify(payload);
   wss.clients.forEach((client) => {
-    if (client.readyState === 1 && client.lobbyCode === code) {
-      client.send(JSON.stringify(data));
+    if (client.readyState === WebSocket.OPEN && client.lobbyCode === code) {
+      try {
+        client.send(msg);
+      } catch (e) {
+        console.warn("broadcast send error to client", e);
+      }
     }
   });
 }
 
 function broadcastPlayerCountAll() {
   const count = Array.from(wss.clients).filter(
-    (c) => c.readyState === 1
+    (c) => c.readyState === WebSocket.OPEN
   ).length;
+  const msg = JSON.stringify({ type: "playerCountAll", count });
   wss.clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(JSON.stringify({ type: "playerCountAll", count }));
+    if (client.readyState === WebSocket.OPEN) {
+      try {
+        client.send(msg);
+      } catch (e) {}
     }
   });
 }
@@ -45,68 +60,49 @@ function ensureLobby(code) {
       chat: [],
       queue: [],
       state: "lobby",
-      timers: {},
-      waitingValue: 0,
-      countdownValue: 0,
       timer: null,
     };
 
-    // broadcast function bound to this lobby code
     const broadcastForThisLobby = (type, payload = {}) => {
       broadcast(code, { type, ...payload });
     };
-    // instantiate LobbyTimer for this lobby, passing a getter to the lobby players array
+
+    const onStartGame = ({ reason, N, R, players }) => {
+      console.log(
+        `[lobby ${code}] onStartGame triggered: reason=${reason} N=${N} R=${R}`
+      );
+      lobbys[code].state = "in-game";
+      try {
+        startGameForLobby(
+          (type, payload) => broadcastForThisLobby(type, payload),
+          code,
+          lobbys[code].players,
+          code,
+          {
+            initialCountdown: 10,
+            mapOptions: { destructibleProb: 0.42 },
+          }
+        );
+      } catch (e) {
+        console.error("Error calling startGameForLobby", e);
+        broadcastForThisLobby("gameStart", { reason: "error_fallback", N, R });
+      }
+    };
+
     lobbys[code].timer = new LobbyTimer(
       broadcastForThisLobby,
-      () => lobbys[code].players
+      () => lobbys[code].players,
+      onStartGame
     );
   }
   return lobbys[code];
 }
 
-// Delegation helpers: use lobby.timer if present
-function startWaiting20(code, duration = 20) {
-  const lobby = lobbys[code];
-  if (!lobby) return;
-  if (lobby.timer) lobby.timer.startWaiting(duration);
-}
-
-function cancelWaiting20(code) {
-  const lobby = lobbys[code];
-  if (!lobby || !lobby.timer) return;
-  // notify and clear through timer API
-  if (lobby.timer.timer && lobby.timer.timer.type === "waiting") {
-    lobby.timer.broadcast("waitingCancelled", {});
-  }
-  lobby.timer.clearTimer();
-}
-
-function startCountdown10(code) {
-  const lobby = lobbys[code];
-  if (!lobby) return;
-  if (lobby.timer) lobby.timer.startCountdown(10);
-}
-
-function stopCountdown10(code) {
-  const lobby = lobbys[code];
-  if (!lobby || !lobby.timer) return;
-  if (lobby.timer.timer && lobby.timer.timer.type === "countdown") {
-    lobby.timer.broadcast("countdownCancelled", {});
-  }
-  lobby.timer.clearTimer();
-}
-
-// Reset lobby back to lobby state so a new game can be started
 function exitToLobby(code) {
   const lobby = lobbys[code];
   if (!lobby) return;
-  // clear timers via timer API
   if (lobby.timer) lobby.timer.clearTimer();
-
-  lobby.waitingValue = 0;
-  lobby.countdownValue = 0;
   lobby.state = "lobby";
-  // reset ready flags so new configuration can be made
   lobby.players.forEach((p) => (p.ready = false));
   lobby.chat.push({
     system: true,
@@ -129,11 +125,14 @@ wss.on("connection", (ws) => {
 
   broadcastPlayerCountAll();
 
-  ws.on("message", (msg) => {
+  ws.on("message", (raw) => {
     let data = {};
     try {
-      data = JSON.parse(msg);
-    } catch {}
+      data = JSON.parse(raw);
+    } catch (err) {
+      ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
+      return;
+    }
 
     if (data.type === "join") {
       let code = data.lobbyCode;
@@ -145,21 +144,18 @@ wss.on("connection", (ws) => {
         ws.lobbyCode = code;
         if (!lobbys[code]) {
           ws.send(
-            JSON.stringify({
-              type: "error",
-              message: "Ce lobby n'existe pas.",
-            })
+            JSON.stringify({ type: "error", message: "Ce lobby n'existe pas." })
           );
           return;
         }
       }
-      let lobby = ensureLobby(ws.lobbyCode);
+
+      const lobby = ensureLobby(ws.lobbyCode);
 
       if (
         !lobby.players.some((p) => p.id === id) &&
-        !lobby.queue.some((p) => p.id === id)
+        !lobby.queue.some((q) => q.id === id)
       ) {
-        // enqueue if lobby full
         if (lobby.players.length >= 4) {
           lobby.queue.push({ id, pseudo: data.pseudo });
           ws.send(
@@ -188,7 +184,7 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        let player = { id, pseudo: data.pseudo, color: 0, ready: false, ws };
+        const player = { id, pseudo: data.pseudo, color: 0, ready: false, ws };
         lobby.players.push(player);
         lobby.chat.push({
           system: true,
@@ -196,7 +192,6 @@ wss.on("connection", (ws) => {
           time: now(),
         });
 
-        // Broadcast lobby update
         broadcast(ws.lobbyCode, {
           type: "lobby",
           players: lobby.players,
@@ -205,7 +200,6 @@ wss.on("connection", (ws) => {
           code: ws.lobbyCode,
         });
 
-        // Evaluate timers after the modification
         if (lobby && lobby.timer) lobby.timer.evaluate();
       }
       return;
@@ -218,17 +212,16 @@ wss.on("connection", (ws) => {
     }
 
     if (data.type === "chat") {
-      let code = ws.lobbyCode;
-      let lobby = lobbys[code];
-      let p = lobby && lobby.players.find((p) => p.id === id);
-      if (lobby && data.text) {
-        lobby.chat.push({
-          system: false,
-          author: p ? p.pseudo : "???",
-          text: data.text,
-          time: now(),
-        });
-      }
+      const code = ws.lobbyCode;
+      const lobby = lobbys[code];
+      if (!lobby) return;
+      const p = lobby.players.find((p) => p.id === id);
+      lobby.chat.push({
+        system: false,
+        author: p ? p.pseudo : "???",
+        text: data.text,
+        time: now(),
+      });
       broadcast(code, {
         type: "lobby",
         players: lobby.players,
@@ -240,10 +233,10 @@ wss.on("connection", (ws) => {
     }
 
     if (data.type === "ready") {
-      let code = ws.lobbyCode;
-      let lobby = lobbys[code];
+      const code = ws.lobbyCode;
+      const lobby = lobbys[code];
       if (!lobby) return;
-      let p = lobby.players.find((p) => p.id === id);
+      const p = lobby.players.find((p) => p.id === id);
       if (p) {
         p.ready = !p.ready;
         lobby.chat.push({
@@ -252,8 +245,6 @@ wss.on("connection", (ws) => {
           time: now(),
         });
       }
-
-      // Broadcast update
       broadcast(code, {
         type: "lobby",
         players: lobby.players,
@@ -261,20 +252,18 @@ wss.on("connection", (ws) => {
         queue: lobby.queue.map((q) => q.pseudo),
         code,
       });
-
-      // Evaluate timers after ready toggle
       if (lobby.timer) lobby.timer.evaluate();
       return;
     }
 
     if (data.type === "color") {
-      let code = ws.lobbyCode;
-      let lobby = lobbys[code];
-      let p = lobby && lobby.players.find((p) => p.id === id);
+      const code = ws.lobbyCode;
+      const lobby = lobbys[code];
+      if (!lobby) return;
+      const p = lobby.players.find((p) => p.id === id);
       if (p && typeof data.color === "number") {
         p.color = data.color;
       }
-      // Broadcast update
       broadcast(code, {
         type: "lobby",
         players: lobby.players,
@@ -286,13 +275,14 @@ wss.on("connection", (ws) => {
     }
 
     if (data.type === "create") {
-      // simple alias to join with create:true
       ws.emit?.(
         "message",
         JSON.stringify({ ...data, type: "join", create: true })
       );
       return;
     }
+
+    ws.send(JSON.stringify({ type: "error", message: "Unknown message type" }));
   });
 
   ws.on("close", () => {
@@ -316,7 +306,6 @@ wss.on("connection", (ws) => {
         time: now(),
       });
     } else {
-      // Also try to remove from queue if present
       const qidx = lobby.queue.findIndex((q) => q.id === id);
       if (qidx !== -1) {
         const waiting = lobby.queue.splice(qidx, 1)[0];
@@ -328,7 +317,6 @@ wss.on("connection", (ws) => {
       }
     }
 
-    // Broadcast updated lobby and re-evaluate timers
     broadcast(code, {
       type: "lobby",
       players: lobby.players,
@@ -336,7 +324,6 @@ wss.on("connection", (ws) => {
       queue: lobby.queue.map((q) => q.pseudo),
       code,
     });
-
     if (lobby.timer) lobby.timer.evaluate();
 
     broadcastPlayerCountAll();

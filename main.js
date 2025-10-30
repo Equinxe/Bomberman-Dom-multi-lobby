@@ -1,4 +1,5 @@
-// main.js (modifié pour utiliser multiplayer/socket.js)
+// main.js - point d'entrée client (branche test-refactor)
+// Simplified: no auto-demo. Keeps lobby flow, chat, waiting room and a delegated color click handler.
 import { render, createElement } from "../Core/dom.js";
 import { Nickname } from "./ui/nickname.js";
 import { Lobby } from "./ui/lobby.js";
@@ -7,11 +8,13 @@ import { WSIndicator } from "./ui/wsindicator.js";
 import { PopupError } from "./ui/popup.js";
 import { setState, getState } from "../Core/state.js";
 import { registerEvent, getEventsMap } from "../Core/events.js";
-import { GamePlaceholder } from "./ui/gamePlaceholder.js";
 import { socket } from "./multiplayer/socket.js";
+import { attachClientGame } from "./client/game-client.js";
 
-window.createElement = createElement; // Réutilise l'implémentation centrale
+window.createElement = createElement;
 
+const params = new URLSearchParams(window.location.search);
+// NOTE: debug/demo auto removed per user request (work on local live server)
 let lobbyState = { players: [], chat: [], queue: [], code: "" };
 const container = document.getElementById("app");
 let localColor = 0;
@@ -19,7 +22,7 @@ let wsConnected = false;
 let playerCount = 1;
 let lastErrorPopup = null;
 
-// helper: preserve chat draft (value + selection + focus) across renders
+// Preserve chat draft across re-renders
 function withPreservedChatDraft(renderFn) {
   try {
     const oldInput =
@@ -53,9 +56,7 @@ function withPreservedChatDraft(renderFn) {
         const e = Math.min(selEnd, len);
         newInput.setSelectionRange(s, e);
       } catch (e) {}
-      if (hadFocus) {
-        newInput.focus();
-      }
+      if (hadFocus) newInput.focus();
     }
   } catch (err) {
     console.error("withPreservedChatDraft error:", err);
@@ -111,9 +112,7 @@ function attachSocketHandlers() {
     showWSIndicator();
   });
 
-  socket.on("message", (data) => {
-    // generic message handler if needed
-  });
+  socket.on("message", (data) => {});
 
   socket.on("playerCountAll", (data) => {
     playerCount = data.count;
@@ -156,36 +155,52 @@ function attachSocketHandlers() {
   socket.on("countdownTick", (data) =>
     showLobbyCountdown(data.value, "Démarrage")
   );
-  socket.on("waitingCancelled", hideLobbyCountdown);
-  socket.on("countdownCancelled", hideLobbyCountdown);
 
-  socket.on("gameStart", (data) => {
-    hideLobbyCountdown();
-    render(
-      GamePlaceholder({
-        players: data.players || [],
-        mapSeed: data.mapSeed || null,
-      }),
-      container,
-      getEventsMap()
-    );
-    showWSIndicator();
-  });
+  socket.on("waitingCancelled", () => hideLobbyCountdown(true));
+  socket.on("countdownCancelled", () => hideLobbyCountdown(true));
 
   socket.on("colorRejected", (data) => {
     showPopupError(data.reason || "Couleur refusée");
   });
 
-  // global click delegation for color buttons
-  document.addEventListener("click", (ev) => {
-    const btn = ev.target.closest("[data-idx]");
-    if (btn) {
-      const idx = Number(btn.getAttribute("data-idx"));
-      if (!Number.isNaN(idx)) {
-        sendWS("color", { color: idx });
-      }
-    }
+  // Keep a console.log for debugging gameStart and mapSeed
+  // IMPORTANT: do NOT persist MAP_SEED here. Server will send a fresh mapSeed at each gameStart;
+  // the client uses payload.mapSeed for generation. Persisting a seed here would force
+  // the same map across starts.
+  socket.on("gameStart", (data) => {
+    console.debug("gameStart recu:", data);
   });
+
+  // Attach a global delegated click handler for color selection once.
+  // It looks for elements with [data-idx] inside .color-selector and sends "color" to server.
+  try {
+    if (!window.__COLOR_CLICK_DELEGATE_ATTACHED) {
+      document.addEventListener("click", (ev) => {
+        try {
+          const btn = ev.target.closest && ev.target.closest("[data-idx]");
+          if (!btn) return;
+          // ensure it's a color-selector button (avoid accidental matches elsewhere)
+          if (!btn.closest || !btn.closest(".color-selector")) return;
+          const raw = btn.getAttribute("data-idx");
+          const idx = raw != null ? Number(raw) : NaN;
+          if (!Number.isNaN(idx)) {
+            // send color change request to server
+            socket.send && socket.send("color", { color: idx });
+            // optional local feedback: highlight briefly (UI will update when server confirms)
+            try {
+              btn.style.transform = "scale(0.92)";
+              setTimeout(() => (btn.style.transform = ""), 120);
+            } catch (e) {}
+          }
+        } catch (e) {
+          console.warn("color button handler error", e);
+        }
+      });
+      window.__COLOR_CLICK_DELEGATE_ATTACHED = true;
+    }
+  } catch (e) {
+    console.warn("Failed to attach color click delegate", e);
+  }
 }
 
 function sendWS(type, payload) {
@@ -201,6 +216,16 @@ function handleSubmit(e, opts = {}) {
     ? lobbyCodeInput.value.trim().toUpperCase()
     : "";
   setState({ nickname, lobbyCode });
+
+  // Persist the lobby code locally for debug and convenience
+  try {
+    if (lobbyCode) localStorage.setItem("LOBBY_CODE", lobbyCode);
+    else localStorage.removeItem("LOBBY_CODE");
+  } catch (e) {}
+
+  // expose local nickname globally so client-game can find local player easily
+  window.__LOCAL_NICKNAME = nickname;
+
   sendWS("join", {
     pseudo: nickname,
     lobbyCode: lobbyCode,
@@ -226,16 +251,26 @@ function handleLobbyUpdate(players, chat, queue, waitingMsg, code) {
     waiting = false;
     queuePosition = 0;
   }
+
   lobbyState.players = players;
   lobbyState.chat = chat;
   lobbyState.queue = queue || [];
   lobbyState.waiting = waiting;
   lobbyState.queuePosition = queuePosition;
   lobbyState.code = code || getState().lobbyCode;
+
   if (isInLobby) {
     const me = players.find((p) => p.pseudo === myPseudo);
     if (me) localColor = me.color ?? 0;
   }
+
+  // expose lobby players globally for the game client fallback
+  try {
+    window.__LOBBY_PLAYERS = Array.isArray(players) ? players : [];
+  } catch (e) {
+    window.__LOBBY_PLAYERS = [];
+  }
+
   showLobby();
 }
 
@@ -299,24 +334,30 @@ function showLobby() {
   showWSIndicator();
 }
 
-// Small overlay for lobby countdown / waiting
+// Overlay: single element updated. If forceRemove=true we remove element entirely.
 function showLobbyCountdown(value, label = "Démarrage") {
+  // Hide if non-positive
+  if (typeof value === "number" && value <= 0) {
+    hideLobbyCountdown(true);
+    return;
+  }
+
   let el = document.getElementById("lobby-countdown");
   if (!el) {
     el = document.createElement("div");
     el.id = "lobby-countdown";
     el.style = `
       position: fixed;
-      top: 14px;
-      right: 14px;
-      z-index: 9999;
+      top: 12px;
+      right: 12px;
+      z-index: 10001;
       background: rgba(0,0,0,0.6);
       color: #fff;
-      padding: 10px 14px;
+      padding: 8px 12px;
       border-radius: 8px;
       font-family: 'Press Start 2P', monospace;
-      font-size: 16px;
-      box-shadow: 0 8px 28px #000;
+      font-size: 14px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     `;
     document.body.appendChild(el);
   }
@@ -324,12 +365,29 @@ function showLobbyCountdown(value, label = "Démarrage") {
   el.style.display = "block";
 }
 
-function hideLobbyCountdown() {
+function hideLobbyCountdown(forceRemove = false) {
   const el = document.getElementById("lobby-countdown");
-  if (el) el.style.display = "none";
+  if (!el) return;
+  if (forceRemove) {
+    if (el.parentNode) el.parentNode.removeChild(el);
+    return;
+  }
+  el.style.display = "none";
 }
 
-// initialisation socket et UI
+// Initialization
 attachSocketHandlers();
 socket.init("ws://localhost:9001");
+
+// Attach client game glue (no auto-demo)
+const gameClient = attachClientGame(socket, container, {
+  cellSize: 24,
+  tilesetUrl: "./assets/images/TileSets.png",
+  playerSpriteUrl: "./assets/images/Players.png",
+  tileSrcSize: 16,
+  tilesPerRow: undefined,
+  debug: false,
+});
+
+// show nickname form to start normally
 showNicknameForm();
