@@ -1,11 +1,11 @@
 // main.js - point d'entrée client (branche test-refactor2)
 // Ajusté : calcule automatiquement un cellSize plus grand si l'écran le permet.
 import { render, createElement } from "../Core/dom.js";
-import { Nickname } from "./ui/nickname.js";
-import { Lobby } from "./ui/lobby.js";
-import { WaitingRoom } from "./ui/waitingroom.js";
-import { WSIndicator } from "./ui/wsindicator.js";
-import { PopupError } from "./ui/popup.js";
+import { Nickname } from "./ui/helpers/nickname.js";
+import { Lobby } from "./ui/views/LobbyView.js";
+import { WaitingRoom } from "./ui/views/WaitingRoom.js";
+import { WSIndicator } from "./ui/components/WsIndicator.js";
+import { PopupError } from "./ui/components/Popup.js";
 import { setState, getState } from "../Core/state.js";
 import { registerEvent, getEventsMap } from "../Core/events.js";
 import { socket } from "./multiplayer/socket.js";
