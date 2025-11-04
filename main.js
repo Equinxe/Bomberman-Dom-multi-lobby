@@ -1,5 +1,5 @@
-// main.js - point d'entrée client (branche test-refactor)
-// Simplified: no auto-demo. Keeps lobby flow, chat, waiting room and a delegated color click handler.
+// main.js - point d'entrée client (branche test-refactor2)
+// Ajusté : calcule automatiquement un cellSize plus grand si l'écran le permet.
 import { render, createElement } from "../Core/dom.js";
 import { Nickname } from "./ui/nickname.js";
 import { Lobby } from "./ui/lobby.js";
@@ -13,8 +13,6 @@ import { attachClientGame } from "./client/game-client.js";
 
 window.createElement = createElement;
 
-const params = new URLSearchParams(window.location.search);
-// NOTE: debug/demo auto removed per user request (work on local live server)
 let lobbyState = { players: [], chat: [], queue: [], code: "" };
 const container = document.getElementById("app");
 let localColor = 0;
@@ -22,7 +20,6 @@ let wsConnected = false;
 let playerCount = 1;
 let lastErrorPopup = null;
 
-// Preserve chat draft across re-renders
 function withPreservedChatDraft(renderFn) {
   try {
     const oldInput =
@@ -42,9 +39,7 @@ function withPreservedChatDraft(renderFn) {
       }
       hadFocus = document.activeElement === oldInput;
     }
-
     renderFn();
-
     const newInput =
       document.querySelector('input[name="message"]') ||
       document.getElementById("lobby-chat-input");
@@ -163,30 +158,21 @@ function attachSocketHandlers() {
     showPopupError(data.reason || "Couleur refusée");
   });
 
-  // Keep a console.log for debugging gameStart and mapSeed
-  // IMPORTANT: do NOT persist MAP_SEED here. Server will send a fresh mapSeed at each gameStart;
-  // the client uses payload.mapSeed for generation. Persisting a seed here would force
-  // the same map across starts.
   socket.on("gameStart", (data) => {
     console.debug("gameStart recu:", data);
   });
 
-  // Attach a global delegated click handler for color selection once.
-  // It looks for elements with [data-idx] inside .color-selector and sends "color" to server.
   try {
     if (!window.__COLOR_CLICK_DELEGATE_ATTACHED) {
       document.addEventListener("click", (ev) => {
         try {
           const btn = ev.target.closest && ev.target.closest("[data-idx]");
           if (!btn) return;
-          // ensure it's a color-selector button (avoid accidental matches elsewhere)
           if (!btn.closest || !btn.closest(".color-selector")) return;
           const raw = btn.getAttribute("data-idx");
           const idx = raw != null ? Number(raw) : NaN;
           if (!Number.isNaN(idx)) {
-            // send color change request to server
             socket.send && socket.send("color", { color: idx });
-            // optional local feedback: highlight briefly (UI will update when server confirms)
             try {
               btn.style.transform = "scale(0.92)";
               setTimeout(() => (btn.style.transform = ""), 120);
@@ -217,13 +203,11 @@ function handleSubmit(e, opts = {}) {
     : "";
   setState({ nickname, lobbyCode });
 
-  // Persist the lobby code locally for debug and convenience
   try {
     if (lobbyCode) localStorage.setItem("LOBBY_CODE", lobbyCode);
     else localStorage.removeItem("LOBBY_CODE");
   } catch (e) {}
 
-  // expose local nickname globally so client-game can find local player easily
   window.__LOCAL_NICKNAME = nickname;
 
   sendWS("join", {
@@ -264,7 +248,6 @@ function handleLobbyUpdate(players, chat, queue, waitingMsg, code) {
     if (me) localColor = me.color ?? 0;
   }
 
-  // expose lobby players globally for the game client fallback
   try {
     window.__LOBBY_PLAYERS = Array.isArray(players) ? players : [];
   } catch (e) {
@@ -334,14 +317,11 @@ function showLobby() {
   showWSIndicator();
 }
 
-// Overlay: single element updated. If forceRemove=true we remove element entirely.
 function showLobbyCountdown(value, label = "Démarrage") {
-  // Hide if non-positive
   if (typeof value === "number" && value <= 0) {
     hideLobbyCountdown(true);
     return;
   }
-
   let el = document.getElementById("lobby-countdown");
   if (!el) {
     el = document.createElement("div");
@@ -379,15 +359,30 @@ function hideLobbyCountdown(forceRemove = false) {
 attachSocketHandlers();
 socket.init("ws://localhost:9001");
 
-// Attach client game glue (no auto-demo)
-const gameClient = attachClientGame(socket, container, {
-  cellSize: 24,
-  tilesetUrl: "./assets/images/TileSets.png",
-  playerSpriteUrl: "./assets/images/Players.png",
-  tileSrcSize: 16,
-  tilesPerRow: undefined,
-  debug: false,
-});
+// Decide a larger cellSize automatically to better use screen space.
+// You can override by setting a fixed number instead of autoCell.
+(function initGameClient() {
+  const preferredCols = 15;
+  const preferredRows = 13;
+  // Fill a large portion of screen (80% width, 75% height)
+  const maxCellWidth = Math.floor((window.innerWidth * 0.8) / preferredCols);
+  const maxCellHeight = Math.floor((window.innerHeight * 0.75) / preferredRows);
+  let autoCell = Math.min(maxCellWidth || 36, maxCellHeight || 36);
+  // clamp sensible range
+  autoCell = Math.max(28, Math.min(80, autoCell));
+  const cellSizeToUse = autoCell; // use computed autoCell (bigger than previous)
+
+  const gameClient = attachClientGame(socket, container, {
+    cellSize: cellSizeToUse,
+    tilesetUrl: "./assets/images/TileSets.png",
+    playerSpriteUrl: "./assets/images/Players.png",
+    tileSrcSize: 16,
+    tilesPerRow: undefined,
+    debug: false,
+    destructibleProb: 0.75, // client default (server can override)
+    playerScale: 1.5, // pass preferred player scale to client (used for rendering)
+  });
+})();
 
 // show nickname form to start normally
 showNicknameForm();

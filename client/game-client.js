@@ -1,8 +1,6 @@
 // client/game-client.js
-// Version mise à jour :
-//  - respecte payload.mapSeed (si présent) pour obtenir une map différente à chaque gameStart
-//  - réserve une zone "en L" autour de chaque spawn pour garantir un espace sûr au démarrage
-//  - pattern indestructibles + destructibles seedés
+// Version mise à jour : default destructible density increased to 0.75
+// Accepts opts.playerScale to control sprite scale (default 1.5).
 import { render } from "../Core/dom.js";
 import { GameView } from "../ui/gameView.js";
 import { HUD } from "../ui/hud.js";
@@ -34,7 +32,9 @@ export function attachClientGame(socket, container, opts = {}) {
   let score = 0;
   let highscore = null;
 
-  // ---- seeded RNG helpers (xmur3 + mulberry32) ----
+  const playerScale =
+    typeof opts.playerScale === "number" ? opts.playerScale : 1.5;
+
   function xmur3(str) {
     let h = 1779033703 ^ str.length;
     for (let i = 0; i < str.length; i++) {
@@ -64,20 +64,17 @@ export function attachClientGame(socket, container, opts = {}) {
     return mulberry32(seedNum);
   }
 
-  // ---- deterministic map generator (patterned indestructibles + seeded destructibles) ----
-  // Improvements:
-  //  - requires seed param (payload.mapSeed) for reproducible per-game maps
-  //  - reserves an "L" shaped safe area around each spawn so players can place bomb and hide
   function generateMapFromSeed(
     cols = 15,
     rows = 13,
     seed = null,
     options = {}
   ) {
+    // default destructibleProb increased to 0.75
     const destructibleProb =
       typeof options.destructibleProb === "number"
         ? options.destructibleProb
-        : opts.destructibleProb ?? 0.3;
+        : opts.destructibleProb ?? 0.75;
     const borderThickness =
       typeof options.borderThickness === "number" ? options.borderThickness : 1;
     const patternSpacing =
@@ -85,7 +82,6 @@ export function attachClientGame(socket, container, opts = {}) {
     const patternOffset =
       typeof options.patternOffset === "number" ? options.patternOffset : 1;
 
-    // final seed: prefer explicit server seed; otherwise generate a unique fallback per load
     let finalSeed = seed;
     if (!finalSeed) {
       try {
@@ -99,24 +95,16 @@ export function attachClientGame(socket, container, opts = {}) {
 
     const rng = makeRngFromSeed(finalSeed);
 
-    // build empty floor grid
     const grid = Array.from({ length: rows }, () =>
       Array.from({ length: cols }, () => "floor")
     );
 
-    // spawn positions (standard Bomberman corners)
     const spawns = [
       { x: 1, y: 1, name: "TL" },
       { x: cols - 2, y: rows - 2, name: "BR" },
       { x: cols - 2, y: 1, name: "TR" },
       { x: 1, y: rows - 2, name: "BL" },
     ];
-
-    // For each spawn define the "L" offsets to reserve so the player can take cover:
-    // TL: keep (0,0), (1,0), (0,1)
-    // TR: keep (0,0), (-1,0), (0,1)
-    // BR: keep (0,0), (-1,0), (0,-1)
-    // BL: keep (0,0), (1,0), (0,-1)
     const spawnOffsets = {
       TL: [
         [0, 0],
@@ -139,8 +127,6 @@ export function attachClientGame(socket, container, opts = {}) {
         [0, -1],
       ],
     };
-
-    // build a set of reserved coordinates (as "x,y" strings) that must remain floor
     const reserved = new Set();
     for (let i = 0; i < spawns.length; i++) {
       const s = spawns[i];
@@ -152,11 +138,8 @@ export function attachClientGame(socket, container, opts = {}) {
           reserved.add(`${rx},${ry}`);
       }
     }
-
     function isReserved(x, y) {
-      // reserved if in reserved set OR in the 2x2 canonical spawn area to be extra-safe
       if (reserved.has(`${x},${y}`)) return true;
-      // also reserve canonical 2x2 spawn boxes to be safe
       if (
         (x <= 1 && y <= 1) ||
         (x >= cols - 2 && y <= 1) ||
@@ -167,7 +150,6 @@ export function attachClientGame(socket, container, opts = {}) {
       return false;
     }
 
-    // 1) Fill border with single 'wall' type
     for (let t = 0; t < borderThickness; t++) {
       const topY = t;
       const bottomY = rows - 1 - t;
@@ -183,12 +165,10 @@ export function attachClientGame(socket, container, opts = {}) {
       }
     }
 
-    // 2) Place interior indestructible blocks using a regular pattern (no RNG)
-    // Start the pattern at 'start = borderThickness + patternOffset' to ensure spacing from the corner
     const start = borderThickness + patternOffset;
     for (let y = start; y < rows - borderThickness; y++) {
       for (let x = start; x < cols - borderThickness; x++) {
-        if (isReserved(x, y)) continue; // never place permanent block on reserved spawn area
+        if (isReserved(x, y)) continue;
         if (
           (x - start) % patternSpacing === 0 &&
           (y - start) % patternSpacing === 0
@@ -198,12 +178,10 @@ export function attachClientGame(socket, container, opts = {}) {
       }
     }
 
-    // 3) Place destructible blocks deterministically (seeded RNG).
-    // Iterate row-major and use rng() so identical seed => identical placements.
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        if (grid[y][x] !== "floor") continue; // keep border + permanent blocks
-        if (isReserved(x, y)) continue; // keep spawn areas clear
+        if (grid[y][x] !== "floor") continue;
+        if (isReserved(x, y)) continue;
         const r = rng();
         if (r < destructibleProb) grid[y][x] = "block";
       }
@@ -246,7 +224,6 @@ export function attachClientGame(socket, container, opts = {}) {
 
   function normalizePlayers(raw, cols = 15, rows = 13) {
     if (!Array.isArray(raw)) return [];
-    // spawn positions: TL, BR, TR, BL
     const spawns = [
       { x: 1, y: 1 },
       { x: cols - 2, y: rows - 2 },
@@ -267,7 +244,6 @@ export function attachClientGame(socket, container, opts = {}) {
     });
   }
 
-  // safe socket on wrapper
   function safeOn(eventName, handler) {
     try {
       if (socket && typeof socket.on === "function") {
@@ -288,7 +264,6 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   }
 
-  // gameStart: use server-provided mapSeed (new seed each start) and server mapOptions if present
   safeOn("gameStart", (payload) => {
     try {
       const cols = (payload.map && payload.map.width) || opts.cols || 15;
@@ -302,10 +277,10 @@ export function attachClientGame(socket, container, opts = {}) {
       ) {
         map = payload.map;
       } else {
-        const seed = payload.mapSeed || null; // server must send mapSeed
+        const seed = payload.mapSeed || null;
         const mapOptions = payload.mapOptions || {};
         const destructibleProb =
-          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.3;
+          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.75;
         map = generateMapFromSeed(cols, rows, seed, {
           destructibleProb,
           patternSpacing: mapOptions.patternSpacing ?? opts.patternSpacing ?? 2,
@@ -341,7 +316,7 @@ export function attachClientGame(socket, container, opts = {}) {
         const seed = snap.mapSeed || null;
         const mapOptions = snap.mapOptions || {};
         const destructibleProb =
-          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.3;
+          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.75;
         map = generateMapFromSeed(cols, rows, seed, {
           destructibleProb,
           patternSpacing: mapOptions.patternSpacing ?? opts.patternSpacing ?? 2,
@@ -404,6 +379,7 @@ export function attachClientGame(socket, container, opts = {}) {
         tileSrcSize,
         tilesPerRow: opts.tilesPerRow || tilesPerRow,
         debug: !!opts.debug,
+        playerScale,
       });
 
       const hudVNode = HUD({

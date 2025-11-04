@@ -1,39 +1,26 @@
 // ui/gameView.js
-// GameView with exact tile indices and destructible-block animation support.
-//
-// Tile mapping (as you gave):
-//  - wall (bord lumineux) index: 33   -> tileCoords { r:0,c:33 }
-//  - wallDark (indestructible sans lumière) index: 71 -> tileCoords { r:1,c:32 } (index 71)
-//  - floor (herbe) index: 72 -> tileCoords { r:1,c:33 }
-//  - block (destructible) base index: 422 (animation frames 422..429 for destruction)
-//
-// Assumptions:
-//  - source tile size: 16x16px
-//  - spacing between tiles in sheet: 1px
-//  - tiles are arranged row-major in the sheet
-//  - attachClientGame already renders continuously (requestAnimationFrame), so this component
-//    computes animation frame per render using Date.now().
-//  - Map cells can be either simple values ("wall","block","floor","wallDark") or objects:
-//      { type: "block", animStart: <ms timestamp> }  // animStart = ms timestamp when destruction started
-//    After the animation completes client or server should replace the cell with "floor".
-//
-// How animation works here:
-//  - destructible block animation frames: frames = [422..429]
-//  - frameDuration default: 80ms (adjustable below). Total animation time = frames.length * frameDuration
-//  - If a cell is an object with animStart, the renderer picks the appropriate frame based on elapsed time.
-//  - When elapsed >= totalAnimation, the last frame is shown (caller should replace cell with "floor" afterwards).
+// Render tiles + players. Ensure player size exactly equals tile displayed size (displayedCell).
+// Integer math throughout; wrappers overflow:hidden to avoid neighbour-pixel bleed.
+import {
+  SPRITE_ROWS,
+  SPRITE_SIZE,
+  SHEET_WIDTH,
+  SHEET_HEIGHT,
+} from "./constants.js";
+
 export function GameView({
   map,
   players = [],
-  cellSize = 24,
+  cellSize = 24, // logical source tile size (default 24)
+  mapScale = 1.0, // visual zoom for the map (if you want to scale the whole map)
   tilesetUrl = "./assets/images/TileSets.png",
   playerSpriteUrl = "./assets/images/Players.png",
   tileSrcSize = 16,
   tileSpacing = 1,
   tilesPerRow: tilesPerRowOpt = undefined,
   debug = false,
+  debugCollision = true,
 }) {
-  // default map 15x13 if none
   const defaultCols = 15;
   const defaultRows = 13;
   const grid =
@@ -44,27 +31,28 @@ export function GameView({
   const rows = (map && map.height) || grid.length;
   const cols = (map && map.width) || (grid[0] ? grid[0].length : defaultCols);
 
-  // exact mapping provided by user:
-  const TILE_INDICES = {
-    wall: 33, // bord lumineux (col:33,row:0 -> index 33)
-    wallDark: 71, // indestructible sans lumiere (col:32,row:1 -> index 71)
-    floor: 72, // herbe (col:33,row:1 -> index 72)
-    blockBase: 422, // destructible first frame (col:32,row:10 -> index 422)
-    blockAnimStart: 422,
-    blockAnimEnd: 429, // inclusive
-  };
+  // displayed cell is the visual size of a tile (e.g. 24)
+  const displayedCell = Math.max(
+    1,
+    Math.round(cellSize * (typeof mapScale === "number" ? mapScale : 1))
+  );
 
-  // animation settings
+  const TILE_INDICES = {
+    wall: 33,
+    wallDark: 71,
+    floor: 72,
+    blockBase: 422,
+    blockAnimStart: 422,
+    blockAnimEnd: 429,
+  };
   const blockAnimFrames = [];
   for (let i = TILE_INDICES.blockAnimStart; i <= TILE_INDICES.blockAnimEnd; i++)
     blockAnimFrames.push(i);
-  const blockFrameDuration = 80; // ms per frame (adjust if you want faster/slower)
+  const blockFrameDuration = 80;
 
-  // tileset metrics cache
+  // tileset metrics cache (detect natural size and tilesPerRow)
   window.__TILESET_INFO = window.__TILESET_INFO || {};
   const cache = window.__TILESET_INFO[tilesetUrl] || {};
-
-  // detect natural size & tilesPerRow if not known
   let naturalW = cache.naturalWidth;
   let naturalH = cache.naturalHeight;
   let computedTilesPerRow = tilesPerRowOpt ?? cache.tilesPerRow;
@@ -85,16 +73,12 @@ export function GameView({
         tilesPerRow: tp,
         loading: false,
       };
-      console.info(
-        `[GameView] tileset loaded: ${tilesetUrl} -> ${nw}x${nh}, tileSrc=${tileSrcSize}, spacing=${tileSpacing}, tilesPerRow=${tp}`
-      );
     };
     img.onerror = () => {
       window.__TILESET_INFO[tilesetUrl] = { loading: false };
       console.warn(`[GameView] failed to load tileset ${tilesetUrl}`);
     };
     img.src = tilesetUrl + (tilesetUrl.indexOf("?") === -1 ? "?_v=1" : "&_v=1");
-    window.__TILESET_INFO[tilesetUrl] = { loading: true };
   }
 
   const cached = window.__TILESET_INFO[tilesetUrl] || {};
@@ -105,22 +89,22 @@ export function GameView({
     cached.tilesPerRow ||
     Math.max(20, Math.floor((naturalW || 320) / (tileSrcSize + tileSpacing)));
 
-  // tile stride on source image (pixels between tile origins)
   const tileStride = tileSrcSize + tileSpacing;
+  // scale from source tile size to displayed tile size
+  const scale = displayedCell / tileSrcSize;
 
-  // image scaled width when drawn at desired scale (we position using tileStride * scale)
-  const scale = cellSize / tileSrcSize;
-  const imgScaledWidth = (naturalW || computedTilesPerRow * tileStride) * scale;
+  // scaled overall tileset width used for translate math
+  const imgScaledWidth = Math.round(
+    (naturalW || computedTilesPerRow * tileStride) * scale
+  );
 
-  // cache computed img style per index
   const imgStyleCache = {};
   function imgStyleForIndex(index) {
     if (imgStyleCache[index]) return imgStyleCache[index];
     const tx = index % computedTilesPerRow;
     const ty = Math.floor(index / computedTilesPerRow);
-    // translate by tileStride * scale
-    const x = -(tx * tileStride) * scale;
-    const y = -(ty * tileStride) * scale;
+    const x = -Math.round(tx * tileStride * scale);
+    const y = -Math.round(ty * tileStride * scale);
     const base = `
       width: ${imgScaledWidth}px;
       height: auto;
@@ -129,17 +113,31 @@ export function GameView({
       transform-origin: 0 0;
       pointer-events:none;
       transform: translate(${x}px, ${y}px);
+      border: none;
     `;
     imgStyleCache[index] = base;
     return base;
   }
 
-  // decide which tile index to display for a given cell value (supports object shapes)
+  function isSolidCell(cell) {
+    if (!cell && cell !== 0) return false;
+    if (typeof cell === "string") {
+      return cell === "wall" || cell === "wallDark" || cell === "block";
+    }
+    if (typeof cell === "object" && cell.type) {
+      return (
+        cell.type === "wall" ||
+        cell.type === "wallDark" ||
+        cell.type === "block"
+      );
+    }
+    if (typeof cell === "number") {
+      return cell === 0 || cell === 1;
+    }
+    return false;
+  }
+
   function tileIndexForCell(cell) {
-    // cell can be:
-    //  - string: "wall"/"block"/"floor"/"wallDark"
-    //  - number: mapping 0->wall,1->block,2->floor
-    //  - object: { type:"block", animStart: <ms timestamp> } to animate destruction
     if (!cell && cell !== 0) return TILE_INDICES.floor;
     if (typeof cell === "string") {
       if (cell === "wall") return TILE_INDICES.wall;
@@ -155,42 +153,42 @@ export function GameView({
     }
     if (typeof cell === "object" && cell.type) {
       if (cell.type === "block") {
-        // animation support: if animStart present, compute frame based on now
         if (typeof cell.animStart === "number") {
           const elapsed = Math.max(0, Date.now() - cell.animStart);
           const frame = Math.floor(elapsed / blockFrameDuration);
-          if (frame >= blockAnimFrames.length) {
-            // animation finished: show last frame (caller should replace cell with "floor" afterwards)
+          if (frame >= blockAnimFrames.length)
             return blockAnimFrames[blockAnimFrames.length - 1];
-          }
           return blockAnimFrames[Math.min(frame, blockAnimFrames.length - 1)];
         }
-        // no animStart -> show base frame
         return TILE_INDICES.blockBase;
       }
       if (cell.type === "wallDark") return TILE_INDICES.wallDark;
       if (cell.type === "wall") return TILE_INDICES.wall;
       if (cell.type === "floor") return TILE_INDICES.floor;
     }
-    // fallback
     return TILE_INDICES.floor;
   }
 
-  // build tile nodes (one wrapper + single <img> per cell using translated tileset)
+  // build tiles
   const tileNodes = [];
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const cell = grid[y][x];
       const idx = tileIndexForCell(cell);
+      const isBlock =
+        (typeof cell === "string" && cell === "block") ||
+        (typeof cell === "object" && cell.type === "block");
       const wrapperStyle = `
         position:absolute;
-        left:${x * cellSize}px;
-        top:${y * cellSize}px;
-        width:${cellSize}px;
-        height:${cellSize}px;
+        left:${Math.round(x * displayedCell)}px;
+        top:${Math.round(y * displayedCell)}px;
+        width:${Math.round(displayedCell)}px;
+        height:${Math.round(displayedCell)}px;
         overflow:hidden;
         box-sizing:border-box;
         z-index:1;
+        background-color: transparent;
+        ${isBlock ? "clip-path: inset(0 0 1px 0);" : ""}
       `;
       const imgStyle = imgStyleForIndex(idx);
       tileNodes.push({
@@ -199,52 +197,127 @@ export function GameView({
         children: [
           {
             tag: "img",
-            attrs: { src: tilesetUrl, style: imgStyle, draggable: "false" },
+            attrs: {
+              src: tilesetUrl,
+              style: imgStyle,
+              draggable: "false",
+              alt: "",
+            },
           },
         ],
       });
     }
   }
 
-  // render players (unchanged)
+  // players: set player size to exactly displayedCell × displayedCell (same as tiles)
   const playersWithPos = ensurePlayerPositions(players, cols, rows);
-  const playerSize = 24;
-  const halfExtra = Math.round((playerSize - cellSize) / 2);
-
   const playerNodes = playersWithPos.map((p) => {
-    const left = p.x * cellSize - halfExtra;
-    const top = p.y * cellSize - halfExtra;
+    const colorIdx = typeof p.color === "number" ? p.color : 0;
+    const spriteRow = (SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].row) || 0;
+    const offsetY =
+      (SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].offsetY) || 0;
+
+    const margin = 4; // tuned to PlayerPreview
+    const spacing = 1;
+    const frame = 0;
+    const sourceSize = SPRITE_SIZE || 24;
+
+    // FORCE player size = displayedCell (same as tile)
+    const targetPx = displayedCell;
+
+    // compute scale from source sprite to target size
+    const bgZoom = targetPx / sourceSize; // typically 24/24 = 1
+
+    // source (frame) origin on sprite sheet
+    const startX = margin + frame * (sourceSize + spacing);
+    const startY = margin + spriteRow * (sourceSize + spacing) + offsetY;
+
+    // position the inner <img> to show the correct sprite frame
+    const imgOffsetX = -Math.round(startX * bgZoom);
+    const imgOffsetY = -Math.round(startY * bgZoom);
+
+    // scaled full sheet size
+    const imgWidth = Math.round((SHEET_WIDTH || 128) * bgZoom);
+    const imgHeight = Math.round((SHEET_HEIGHT || 128) * bgZoom);
+
+    // wrapper is exactly one tile and clips overflow so the visible area is exactly displayedCell
+    const wrapperLeft = Math.round(p.x * displayedCell);
+    const wrapperTop = Math.round(p.y * displayedCell);
     const wrapperStyle = `
       position:absolute;
-      left:${left}px;
-      top:${top}px;
-      width:${playerSize}px;
-      height:${playerSize}px;
+      left:${wrapperLeft}px;
+      top:${wrapperTop}px;
+      width:${targetPx}px;
+      height:${targetPx}px;
       z-index:60;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      transform: translateZ(0);
+      display:block;
       pointer-events:none;
+      overflow:hidden;
     `;
-    const imgStyle = `
-      width:${playerSize}px;
-      height:${playerSize}px;
+
+    const innerStyle = `
+      position:relative;
+      left:${imgOffsetX}px;
+      top:${imgOffsetY}px;
+      width:${imgWidth}px;
+      height:${imgHeight}px;
       image-rendering: pixelated;
       display:block;
-      border-radius:6px;
-    `;
-    const haloColor = playerColorToCss(p.color);
-    const haloStyle = `
-      position:absolute;
-      left:0;top:0;width:${playerSize}px;height:${playerSize}px;border-radius:6px;
-      box-shadow: 0 0 0 4px ${hexToRgba(
-        haloColor,
-        0.22
-      )} inset, 0 0 8px ${hexToRgba(haloColor, 0.14)};
       pointer-events:none;
+      border: none;
     `;
-    const initials = (p.pseudo || "").slice(0, 2).toUpperCase();
+
+    // optional collision visualization: small centered box (user can adjust)
+    const collisionNodes = [];
+    if (debugCollision) {
+      const tx = typeof p.x === "number" ? p.x : 0;
+      const ty = typeof p.y === "number" ? p.y : 0;
+      const tileCell =
+        (grid[ty] && grid[ty][tx]) !== undefined ? grid[ty][tx] : null;
+      const collision = isSolidCell(tileCell);
+
+      if (collision) {
+        const colLeft = Math.round(tx * displayedCell);
+        const colTop = Math.round(ty * displayedCell);
+        collisionNodes.push({
+          tag: "div",
+          attrs: {
+            style: `
+              position:absolute;
+              left:${colLeft}px;
+              top:${colTop}px;
+              width:${displayedCell}px;
+              height:${displayedCell}px;
+              background: rgba(255,0,0,0.18);
+              z-index:55;
+              pointer-events:none;
+            `,
+          },
+        });
+      }
+
+      // default hitbox: centered box (you can change width/height here)
+      const hitW = 16;
+      const hitH = 16;
+      const hitLeft = Math.round((targetPx - hitW) / 2);
+      const hitTop = Math.round((targetPx - hitH) / 2);
+      collisionNodes.push({
+        tag: "div",
+        attrs: {
+          style: `
+            position:absolute;
+            left:${hitLeft}px;
+            top:${hitTop}px;
+            width:${hitW}px;
+            height:${hitH}px;
+            background: rgba(0,128,255,0.28);
+            border: 1px solid rgba(0,128,255,0.6);
+            z-index:65;
+            pointer-events:none;
+          `,
+        },
+      });
+    }
 
     return {
       tag: "div",
@@ -252,144 +325,31 @@ export function GameView({
       children: [
         {
           tag: "img",
-          attrs: { src: playerSpriteUrl, style: imgStyle, draggable: "false" },
-        },
-        { tag: "div", attrs: { style: haloStyle } },
-        {
-          tag: "div",
           attrs: {
-            style: `position:absolute;left:0;top:0;width:${playerSize}px;height:${playerSize}px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#012;pointer-events:none;`,
+            src: playerSpriteUrl,
+            style: innerStyle,
+            draggable: "false",
+            alt: "",
           },
-          children: [initials],
         },
+        ...collisionNodes,
       ],
     };
   });
 
-  // debug overlay if requested
-  const overlays = [];
-  if (debug) {
-    overlays.push({
-      tag: "div",
-      attrs: {
-        style: `position:absolute;left:0;top:0;width:${
-          cols * cellSize
-        }px;height:${rows * cellSize}px;pointer-events:none;z-index:200;`,
-      },
-      children: [
-        ...Array.from({ length: cols }, (_, i) => ({
-          tag: "div",
-          attrs: {
-            style: `position:absolute;left:${
-              i * cellSize
-            }px;top:0;width:1px;height:${
-              rows * cellSize
-            }px;background:rgba(255,255,255,0.06);pointer-events:none;`,
-          },
-        })),
-        ...Array.from({ length: rows }, (_, j) => ({
-          tag: "div",
-          attrs: {
-            style: `position:absolute;top:${
-              j * cellSize
-            }px;left:0;height:1px;width:${
-              cols * cellSize
-            }px;background:rgba(255,255,255,0.06);pointer-events:none;`,
-          },
-        })),
-      ],
-    });
-
-    // highlight the three tiles defined by user coords
-    const highlights = [
-      {
-        idx: TILE_INDICES.wall,
-        color: "#ff00ff",
-        label: "wall(light) idx " + TILE_INDICES.wall,
-      },
-      {
-        idx: TILE_INDICES.wallDark,
-        color: "#00ff00",
-        label: "wallDark idx " + TILE_INDICES.wallDark,
-      },
-      {
-        idx: TILE_INDICES.floor,
-        color: "#00ffff",
-        label: "floor idx " + TILE_INDICES.floor,
-      },
-    ];
-    highlights.forEach((h, i) => {
-      // compute r,c from index for display (if tilesPerRow known)
-      const tp = computedTilesPerRow || 1;
-      const r = Math.floor(h.idx / tp);
-      const c = h.idx % tp;
-      overlays.push({
-        tag: "div",
-        attrs: {
-          style: `position:absolute;left:${c * cellSize}px;top:${
-            r * cellSize
-          }px;width:${cellSize}px;height:${cellSize}px;border:2px solid ${
-            h.color
-          };box-sizing:border-box;z-index:210;pointer-events:none;`,
-        },
-      });
-      overlays.push({
-        tag: "div",
-        attrs: {
-          style: `position:absolute;left:${c * cellSize + 6}px;top:${
-            r * cellSize + 6
-          }px;color:${h.color};font-size:12px;z-index:211;pointer-events:none;`,
-        },
-        children: [h.label],
-      });
-    });
-
-    overlays.push({
-      tag: "div",
-      attrs: {
-        style: `
-          position:absolute;
-          left:8px;top:8px;
-          background:rgba(0,0,0,0.6);
-          color:#fff;
-          padding:8px 10px;
-          border-radius:6px;
-          font-family: monospace;
-          font-size:12px;
-          z-index:220;
-          pointer-events:none;
-        `,
-      },
-      children: [
-        { tag: "div", children: [`tileset: ${tilesetUrl}`] },
-        {
-          tag: "div",
-          children: [`natural: ${naturalW || "?"} x ${naturalH || "?"}`],
-        },
-        { tag: "div", children: [`tileSrcSize: ${tileSrcSize}px`] },
-        { tag: "div", children: [`tileSpacing: ${tileSpacing}px`] },
-        { tag: "div", children: [`tileStride: ${tileStride}px`] },
-        { tag: "div", children: [`tilesPerRow: ${computedTilesPerRow}`] },
-        {
-          tag: "div",
-          children: [`blockAnim frames: ${blockAnimFrames.join(",")}`],
-        },
-      ],
-    });
-  }
-
-  const wrapperStyle = `position:relative;width:${cols * cellSize}px;height:${
-    rows * cellSize
-  }px;background:transparent;overflow:hidden;`;
+  // map root
+  const wrapperStyle = `position:relative;width:${
+    cols * displayedCell
+  }px;height:${rows * displayedCell}px;background:transparent;overflow:hidden;`;
 
   return {
     tag: "div",
     attrs: { style: wrapperStyle, id: "game-map-root" },
-    children: [...tileNodes, ...playerNodes, ...overlays],
+    children: [...tileNodes, ...playerNodes],
   };
 }
 
-// same helpers as before
+// helper
 function ensurePlayerPositions(players = [], cols = 15, rows = 13) {
   const out = players.map((p) => ({ ...p }));
   const TL = { x: 1, y: 1 };
@@ -411,33 +371,4 @@ function ensurePlayerPositions(players = [], cols = 15, rows = 13) {
     out[i].y = pos.y;
   }
   return out;
-}
-
-function playerColorToCss(index) {
-  const palette = [
-    "#ffffff",
-    "#222222",
-    "#ff4b4b",
-    "#4b8bff",
-    "#58ff7a",
-    "#ffd24b",
-    "#ff9cff",
-  ];
-  return palette[(index || 0) % palette.length];
-}
-function hexToRgba(hex, alpha = 1) {
-  const h = hex.replace("#", "");
-  const bigint = parseInt(
-    h.length === 3
-      ? h
-          .split("")
-          .map((c) => c + c)
-          .join("")
-      : h,
-    16
-  );
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  return `rgba(${r},${g},${b},${alpha})`;
 }
