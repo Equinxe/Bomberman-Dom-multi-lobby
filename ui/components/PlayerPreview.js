@@ -1,13 +1,10 @@
-export * from "../PlayerPreview.js";
-
-// ui/PlayerPreview.js
 import {
   SPRITE_ROWS,
   SPRITE_SIZE,
   SPRITE_ZOOM,
   SHEET_WIDTH,
   SHEET_HEIGHT,
-} from "./constants.js";
+} from "./../helpers/constants.js";
 
 // PlayerPreview: extrait depuis ui/lobby.js — rend une preview animée du sprite
 export function PlayerPreview({ colorIdx, uniqueId }) {

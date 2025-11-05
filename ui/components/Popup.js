@@ -1,5 +1,3 @@
-export * from "../popup.js";
-
 export function PopupError({ message }) {
   // Ajoute dynamiquement l'animation CSS si besoin
   if (

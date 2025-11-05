@@ -1,5 +1,5 @@
-import { setState } from "../Core/state.js";
-import { registerEvent } from "../Core/events.js";
+import { setState } from "../../Core/state.js";
+import { registerEvent } from "../../Core/events.js";
 
 export function Nickname({ onSubmit }) {
   function handleInputLobbyCode(e) {

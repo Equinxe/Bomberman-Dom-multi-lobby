@@ -1,8 +1,8 @@
 // ui/lobby.js
 // Simplified lobby entrypoint that composes LobbyPanel + ChatPanel
-import { registerEvent } from "../Core/events.js";
-import { LobbyPanel } from "./LobbyPanel.js";
-import { ChatPanel } from "./ChatPanel.js";
+import { registerEvent } from "../../Core/events.js";
+import { LobbyPanel } from "./../components/LobbyPanel.js";
+import { ChatPanel } from "./../components/ChatPanel.js";
 
 export function Lobby(props) {
   const {

@@ -1,9 +1,10 @@
-export * from "../PlayerCard.js";
-
-// ui/PlayerCard.js
 import { PlayerPreview } from "./PlayerPreview.js";
 import { ColorSelector } from "./ColorSelector.js";
-import { PLAYER_COLORS, SPRITE_SIZE, SPRITE_ZOOM } from "./constants.js";
+import {
+  PLAYER_COLORS,
+  SPRITE_SIZE,
+  SPRITE_ZOOM,
+} from "./../helpers/constants.js";
 
 // Render a single player card (empty state OR filled). Uses event names expected
 // by main.js (e.g. "handleReady"). Keep presentation only — behavior wired by events map.

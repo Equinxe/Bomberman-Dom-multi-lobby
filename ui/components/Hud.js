@@ -1,9 +1,3 @@
-export * from "../hud.js";
-
-// ui/hud.js
-// HUD minimal et stable : SC (score), timer principal (10:00 -> countdown), HI (highscore).
-// Ligne du dessous : endTimer (ascendant) + vignettes joueurs avec vies.
-// Le design utilise des boîtes fixes (min-width) pour éviter que le texte "saute".
 export function HUD({
   score = 0,
   countdown = null, // seconds remaining (600..0) or null

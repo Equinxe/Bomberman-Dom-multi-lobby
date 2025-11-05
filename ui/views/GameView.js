@@ -4,17 +4,17 @@ import {
   SPRITE_SIZE,
   SHEET_WIDTH,
   SHEET_HEIGHT,
-} from "./constants.js";
+} from "./../helpers/constants.js";
 import {
   isSolidCell,
   isDestructibleCell,
   isIndestructibleCell,
-} from "./collision.js";
+} from "./../helpers/collision.js";
 import {
   tileIndexForCell,
   imgStyleForIndex,
   ensureTilesetInfo,
-} from "./tiles.js";
+} from "./../helpers/tiles.js";
 
 export function GameView(options) {
   // keep same signature as before, accept object

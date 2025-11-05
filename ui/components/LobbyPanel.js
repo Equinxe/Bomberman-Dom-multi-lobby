@@ -1,5 +1,3 @@
-export * from "../LobbyPanel.js";
-
 import { PlayerCard } from "./PlayerCard.js";
 
 // Small ProgressBar helper

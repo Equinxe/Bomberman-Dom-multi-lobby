@@ -2,8 +2,8 @@
 // Version mise à jour : default destructible density increased to 0.75
 // Accepts opts.playerScale to control sprite scale (default 1.5).
 import { render } from "../Core/dom.js";
-import { GameView } from "../ui/gameView.js";
-import { HUD } from "../ui/hud.js";
+import { GameView } from "../ui/views/GameView.js";
+import { HUD } from "../ui/components/Hud.js";
 
 export function attachClientGame(socket, container, opts = {}) {
   const isBrowser =

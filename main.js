@@ -3,7 +3,7 @@
 import { render, createElement } from "../Core/dom.js";
 import { Nickname } from "./ui/helpers/nickname.js";
 import { Lobby } from "./ui/views/LobbyView.js";
-import { WaitingRoom } from "./ui/views/WaitingRoom.js";
+import { WaitingRoom } from "./ui/views/WaitingRoomView.js";
 import { WSIndicator } from "./ui/components/WsIndicator.js";
 import { PopupError } from "./ui/components/Popup.js";
 import { setState, getState } from "../Core/state.js";
