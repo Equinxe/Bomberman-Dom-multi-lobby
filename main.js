@@ -1,5 +1,5 @@
 // main.js - point d'entrée client (branche test-refactor2)
-// Ajusté : calcule automatiquement un cellSize plus grand si l'écran le permet.
+// Ajusté : lors du démarrage du jeu on force cellSize 32 (tiles plus grands) et playerScale 1.2.
 import { render, createElement } from "../Core/dom.js";
 import { Nickname } from "./ui/helpers/nickname.js";
 import { Lobby } from "./ui/views/LobbyView.js";
@@ -19,43 +19,23 @@ let localColor = 0;
 let wsConnected = false;
 let playerCount = 1;
 let lastErrorPopup = null;
+let gameApi = null;
 
 function withPreservedChatDraft(renderFn) {
   try {
-    const oldInput =
-      document.querySelector('input[name="message"]') ||
-      document.getElementById("lobby-chat-input");
-    let draft = null;
-    let selStart = 0;
-    let selEnd = 0;
-    let hadFocus = false;
-    if (oldInput) {
-      draft = oldInput.value;
-      try {
-        selStart = oldInput.selectionStart;
-        selEnd = oldInput.selectionEnd;
-      } catch (e) {
-        selStart = selEnd = draft.length;
-      }
-      hadFocus = document.activeElement === oldInput;
-    }
+    const draftEl = document.getElementById("chat-draft");
+    const draft = draftEl ? draftEl.value : "";
     renderFn();
-    const newInput =
-      document.querySelector('input[name="message"]') ||
-      document.getElementById("lobby-chat-input");
-    if (newInput && draft !== null) {
-      newInput.value = draft;
-      try {
-        const len = newInput.value.length;
-        const s = Math.min(selStart, len);
-        const e = Math.min(selEnd, len);
-        newInput.setSelectionRange(s, e);
-      } catch (e) {}
-      if (hadFocus) newInput.focus();
+    if (draftEl) {
+      const newDraftEl = document.getElementById("chat-draft");
+      if (newDraftEl) newDraftEl.value = draft;
     }
-  } catch (err) {
-    console.error("withPreservedChatDraft error:", err);
-    renderFn();
+  } catch (e) {
+    try {
+      renderFn();
+    } catch (err) {
+      console.error("withPreservedChatDraft renderFn error", err);
+    }
   }
 }
 
@@ -82,18 +62,54 @@ function showWSIndicator() {
 function showPopupError(message) {
   const app = document.getElementById("app");
   if (!app) return;
+
   if (lastErrorPopup) {
-    app.removeChild(lastErrorPopup);
+    try {
+      if (app.contains(lastErrorPopup)) {
+        app.removeChild(lastErrorPopup);
+      }
+    } catch (e) {
+      console.warn("showPopupError: failed to remove lastErrorPopup", e);
+    }
     lastErrorPopup = null;
   }
+
   const popupVNode = PopupError({ message });
   const popupElem = window.createElement(popupVNode);
   lastErrorPopup = popupElem;
-  app.appendChild(popupElem);
-  setTimeout(() => {
-    if (app.contains(popupElem)) app.removeChild(popupElem);
+  try {
+    app.appendChild(popupElem);
+  } catch (e) {
+    console.warn("showPopupError: failed to append popupElem", e);
     lastErrorPopup = null;
+    return;
+  }
+
+  setTimeout(() => {
+    try {
+      if (app.contains(popupElem)) {
+        app.removeChild(popupElem);
+      }
+    } catch (e) {
+      console.warn(
+        "showPopupError: failed to remove popupElem after timeout",
+        e
+      );
+    }
+    if (lastErrorPopup === popupElem) lastErrorPopup = null;
   }, 3000);
+}
+
+function stopGameIfRunning() {
+  try {
+    if (gameApi && typeof gameApi.stop === "function") {
+      gameApi.stop();
+    }
+  } catch (e) {
+    console.warn("stopGameIfRunning error", e);
+  } finally {
+    gameApi = null;
+  }
 }
 
 function attachSocketHandlers() {
@@ -107,14 +123,13 @@ function attachSocketHandlers() {
     showWSIndicator();
   });
 
-  socket.on("message", (data) => {});
-
   socket.on("playerCountAll", (data) => {
     playerCount = data.count;
     showWSIndicator();
   });
 
   socket.on("lobby", (data) => {
+    stopGameIfRunning();
     handleLobbyUpdate(
       data.players || [],
       data.chat || [],
@@ -125,6 +140,7 @@ function attachSocketHandlers() {
   });
 
   socket.on("waiting", (data) => {
+    stopGameIfRunning();
     handleLobbyUpdate(
       data.players || [],
       data.chat || [],
@@ -151,15 +167,34 @@ function attachSocketHandlers() {
     showLobbyCountdown(data.value, "Démarrage")
   );
 
-  socket.on("waitingCancelled", () => hideLobbyCountdown(true));
-  socket.on("countdownCancelled", () => hideLobbyCountdown(true));
-
-  socket.on("colorRejected", (data) => {
-    showPopupError(data.reason || "Couleur refusée");
+  socket.on("waitingCancelled", () => {
+    hideLobbyCountdown(true);
+    stopGameIfRunning();
+  });
+  socket.on("countdownCancelled", () => {
+    hideLobbyCountdown(true);
+    stopGameIfRunning();
   });
 
   socket.on("gameStart", (data) => {
-    console.debug("gameStart recu:", data);
+    try {
+      stopGameIfRunning();
+      // Force larger tiles (32x32) to zoom the tileset, playerScale=1.2 keeps sprite slightly larger
+      gameApi = attachClientGame(socket, container, {
+        cellSize: 32,
+        playerScale: 1.2,
+        debugCollision: true, // keep player hitbox visible by default
+        showCollisionOverlays: false, // do not show tile overlays
+        inputEnabled: true,
+      });
+
+      if (data && data.localPseudo) {
+        window.__LOCAL_NICKNAME = data.localPseudo;
+      }
+    } catch (e) {
+      console.error("Error while starting attachClientGame:", e, data);
+      showPopupError("Erreur lors du démarrage du jeu");
+    }
   });
 
   try {
@@ -359,30 +394,25 @@ function hideLobbyCountdown(forceRemove = false) {
 attachSocketHandlers();
 socket.init("ws://localhost:9001");
 
-// Decide a larger cellSize automatically to better use screen space.
-// You can override by setting a fixed number instead of autoCell.
+// Ensure the initial UI is shown (nickname form if no nickname)
+showLobby();
+
+// Compute auto cell sizes for compatibility (we force 24px tiles at game start)
 (function initGameClient() {
   const preferredCols = 15;
   const preferredRows = 13;
-  // Fill a large portion of screen (80% width, 75% height)
-  const maxCellWidth = Math.floor((window.innerWidth * 0.8) / preferredCols);
-  const maxCellHeight = Math.floor((window.innerHeight * 0.75) / preferredRows);
+  const vw = Math.max(
+    document.documentElement.clientWidth || 0,
+    window.innerWidth || 0
+  );
+  const vh = Math.max(
+    document.documentElement.clientHeight || 0,
+    window.innerHeight || 0
+  );
+  const maxWidth = Math.min(920, vw - 80);
+  const maxHeight = Math.floor(vh * 0.75);
+  const maxCellWidth = Math.floor(maxWidth / preferredCols);
+  const maxCellHeight = Math.floor(maxHeight / preferredRows);
   let autoCell = Math.min(maxCellWidth || 36, maxCellHeight || 36);
-  // clamp sensible range
-  autoCell = Math.max(28, Math.min(80, autoCell));
-  const cellSizeToUse = autoCell; // use computed autoCell (bigger than previous)
-
-  const gameClient = attachClientGame(socket, container, {
-    cellSize: cellSizeToUse,
-    tilesetUrl: "./assets/images/TileSets.png",
-    playerSpriteUrl: "./assets/images/Players.png",
-    tileSrcSize: 16,
-    tilesPerRow: undefined,
-    debug: false,
-    destructibleProb: 0.75, // client default (server can override)
-    playerScale: 1.5, // pass preferred player scale to client (used for rendering)
-  });
+  autoCell = Math.max(24, Math.min(80, autoCell));
 })();
-
-// show nickname form to start normally
-showNicknameForm();

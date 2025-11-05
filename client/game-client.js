@@ -1,6 +1,7 @@
 // client/game-client.js
-// Version mise à jour : default destructible density increased to 0.75
-// Accepts opts.playerScale to control sprite scale (default 1.5).
+// Réception et application en temps réel des inputs distants (relay server -> playerInput)
+// Le client garde son mouvement optimiste local, et applique pour les autres joueurs le mouvement
+// issu des positions envoyées par le serveur (playerPosition).
 import { render } from "../Core/dom.js";
 import { GameView } from "../ui/views/GameView.js";
 import { HUD } from "../ui/components/Hud.js";
@@ -21,7 +22,7 @@ export function attachClientGame(socket, container, opts = {}) {
   let fps = 60;
   let lastTs =
     typeof performance !== "undefined" ? performance.now() : Date.now();
-  let cellSize = opts.cellSize || 24;
+  let cellSize = typeof opts.cellSize === "number" ? opts.cellSize : 24;
   let tileSrcSize = opts.tileSrcSize || 16;
   let tilesPerRow = opts.tilesPerRow || undefined;
   let started = false;
@@ -33,8 +34,22 @@ export function attachClientGame(socket, container, opts = {}) {
   let highscore = null;
 
   const playerScale =
-    typeof opts.playerScale === "number" ? opts.playerScale : 1.5;
+    typeof opts.playerScale === "number" ? opts.playerScale : undefined;
 
+  const inputEnabled = opts.inputEnabled !== false;
+  const playerSpeed =
+    typeof opts.playerSpeed === "number" ? opts.playerSpeed : 4; // cells per second
+
+  const inputState = { left: false, right: false, up: false, down: false };
+
+  // kept for UI feedback only (not used to move remote players anymore)
+  const remoteInputState = {};
+
+  let localPseudo =
+    (typeof window !== "undefined" && window.__LOCAL_NICKNAME) || null;
+  let localPlayerId = null;
+
+  // ---------- helpers & RNG ----------
   function xmur3(str) {
     let h = 1779033703 ^ str.length;
     for (let i = 0; i < str.length; i++) {
@@ -70,7 +85,6 @@ export function attachClientGame(socket, container, opts = {}) {
     seed = null,
     options = {}
   ) {
-    // default destructibleProb increased to 0.75
     const destructibleProb =
       typeof options.destructibleProb === "number"
         ? options.destructibleProb
@@ -196,32 +210,7 @@ export function attachClientGame(socket, container, opts = {}) {
     };
   }
 
-  function startCountdown(initial = 600) {
-    clearCountdown();
-    countdown = initial;
-    countdownInterval = setInterval(() => {
-      countdown = Math.max(0, countdown - 1);
-      if (countdown <= 0) clearCountdown();
-    }, 1000);
-  }
-  function clearCountdown() {
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      countdownInterval = null;
-    }
-  }
-  function startEndTimer() {
-    clearEndTimer();
-    endTimer = 0;
-    endTimerInterval = setInterval(() => endTimer++, 1000);
-  }
-  function clearEndTimer() {
-    if (endTimerInterval) {
-      clearInterval(endTimerInterval);
-      endTimerInterval = null;
-    }
-  }
-
+  // ---------- normalizePlayers (must be available before handlers) ----------
   function normalizePlayers(raw, cols = 15, rows = 13) {
     if (!Array.isArray(raw)) return [];
     const spawns = [
@@ -244,6 +233,38 @@ export function attachClientGame(socket, container, opts = {}) {
     });
   }
 
+  // ---------- countdown / timers (must be available before handlers) ----------
+  function startCountdown(initial = 600) {
+    clearCountdown();
+    countdown = initial;
+    countdownInterval = setInterval(() => {
+      countdown = Math.max(0, countdown - 1);
+      if (countdown <= 0) {
+        clearCountdown();
+      }
+    }, 1000);
+  }
+  function clearCountdown() {
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+    countdown = null;
+  }
+  function startEndTimer() {
+    clearEndTimer();
+    endTimer = 0;
+    endTimerInterval = setInterval(() => endTimer++, 1000);
+  }
+  function clearEndTimer() {
+    if (endTimerInterval) {
+      clearInterval(endTimerInterval);
+      endTimerInterval = null;
+    }
+    endTimer = null;
+  }
+
+  // ---------- safeOn wrapper ----------
   function safeOn(eventName, handler) {
     try {
       if (socket && typeof socket.on === "function") {
@@ -264,11 +285,140 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   }
 
+  // ---------- send input to server ----------
+  function sendInputToServer(payload) {
+    try {
+      // IMPORTANT: wrap payload under the "payload" key so the server receives:
+      // { type: "input", payload: { type: "move", dir: "...", active: true } }
+      // This prevents the payload.type from overriding the outer message type.
+      console.debug("[client] sendInputToServer ->", payload);
+      socket &&
+        typeof socket.send === "function" &&
+        socket.send("input", { payload });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function isTypingInFormElement(target) {
+    if (!target) return false;
+    const tag = (target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select") return true;
+    if (target.isContentEditable) return true;
+    if (
+      target.closest &&
+      target.closest("input,textarea,select,[contenteditable='true']")
+    )
+      return true;
+    return false;
+  }
+
+  function handleKeyDown(ev) {
+    if (!inputEnabled) return;
+    if (isTypingInFormElement(ev.target)) return;
+
+    const key = (ev.key || "").toLowerCase();
+    let changed = false;
+    if (key === "arrowleft" || key === "a" || key === "q") {
+      if (!inputState.left) changed = true;
+      inputState.left = true;
+      sendInputToServer({ type: "move", dir: "left", active: true });
+    } else if (key === "arrowright" || key === "d") {
+      if (!inputState.right) changed = true;
+      inputState.right = true;
+      sendInputToServer({ type: "move", dir: "right", active: true });
+    } else if (key === "arrowup" || key === "w" || key === "z") {
+      if (!inputState.up) changed = true;
+      inputState.up = true;
+      sendInputToServer({ type: "move", dir: "up", active: true });
+    } else if (key === "arrowdown" || key === "s") {
+      if (!inputState.down) changed = true;
+      inputState.down = true;
+      sendInputToServer({ type: "move", dir: "down", active: true });
+    } else if (key === " " || key === "x") {
+      sendInputToServer({ type: "action", action: "placeBomb" });
+    }
+    if (changed) ev.preventDefault();
+  }
+
+  function handleKeyUp(ev) {
+    if (!inputEnabled) return;
+    if (isTypingInFormElement(ev.target)) return;
+
+    const key = (ev.key || "").toLowerCase();
+    if (key === "arrowleft" || key === "a" || key === "q") {
+      inputState.left = false;
+      sendInputToServer({ type: "move", dir: "left", active: false });
+    } else if (key === "arrowright" || key === "d") {
+      inputState.right = false;
+      sendInputToServer({ type: "move", dir: "right", active: false });
+    } else if (key === "arrowup" || key === "w" || key === "z") {
+      inputState.up = false;
+      sendInputToServer({ type: "move", dir: "up", active: false });
+    } else if (key === "arrowdown" || key === "s") {
+      inputState.down = false;
+      sendInputToServer({ type: "move", dir: "down", active: false });
+    }
+  }
+
+  function attachInputListeners() {
+    if (!isBrowser) return;
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+  }
+  function detachInputListeners() {
+    if (!isBrowser) return;
+    window.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("keyup", handleKeyUp);
+  }
+
+  function applyLocalMovement(dtMs) {
+    if (!players || !players.length) return;
+    const pseudo =
+      localPseudo ||
+      (typeof window !== "undefined" && window.__LOCAL_NICKNAME) ||
+      null;
+    if (!pseudo) return;
+    const idx = players.findIndex(
+      (p) => p.pseudo === pseudo || p.id === pseudo
+    );
+    if (idx === -1) return;
+    const p = players[idx];
+    const speedCellsPerSec = playerSpeed;
+    const delta = (dtMs / 1000) * speedCellsPerSec;
+    let dx = 0,
+      dy = 0;
+    if (inputState.left) dx -= delta;
+    if (inputState.right) dx += delta;
+    if (inputState.up) dy -= delta;
+    if (inputState.down) dy += delta;
+    if (dx === 0 && dy === 0) return;
+    const newX = typeof p.x === "number" ? p.x + dx : p.x;
+    const newY = typeof p.y === "number" ? p.y + dy : p.y;
+    players[idx] = { ...p, x: newX, y: newY };
+  }
+
   safeOn("gameStart", (payload) => {
     try {
       const cols = (payload.map && payload.map.width) || opts.cols || 15;
       const rows = (payload.map && payload.map.height) || opts.rows || 13;
       players = normalizePlayers(payload.players || [], cols, rows);
+
+      const candidate = players.find((pl) => pl.pseudo === localPseudo);
+      if (candidate) localPlayerId = candidate.id;
+
+      players.forEach((pl) => {
+        if (pl && pl.id) {
+          if (!remoteInputState[pl.id]) {
+            remoteInputState[pl.id] = {
+              left: false,
+              right: false,
+              up: false,
+              down: false,
+            };
+          }
+        }
+      });
 
       if (
         payload.map &&
@@ -300,6 +450,11 @@ export function attachClientGame(socket, container, opts = {}) {
       clearEndTimer();
       endTimer = null;
       started = true;
+      localPseudo =
+        payload.localPseudo ||
+        localPseudo ||
+        (typeof window !== "undefined" && window.__LOCAL_NICKNAME) ||
+        localPseudo;
     } catch (e) {
       console.error("Error handling gameStart:", e, payload);
     }
@@ -325,12 +480,26 @@ export function attachClientGame(socket, container, opts = {}) {
             mapOptions.borderThickness ?? opts.borderThickness ?? 1,
         });
       }
-      if (Array.isArray(snap.players))
+
+      if (Array.isArray(snap.players)) {
         players = normalizePlayers(
           snap.players,
           map.width || opts.cols || 15,
           map.height || opts.rows || 13
         );
+        const candidate = players.find((pl) => pl.pseudo === localPseudo);
+        if (candidate) localPlayerId = candidate.id;
+        players.forEach((pl) => {
+          if (pl && pl.id && !remoteInputState[pl.id]) {
+            remoteInputState[pl.id] = {
+              left: false,
+              right: false,
+              up: false,
+              down: false,
+            };
+          }
+        });
+      }
       if (typeof snap.score === "number") score = snap.score;
       if (typeof snap.highscore === "number") highscore = snap.highscore;
       if (typeof snap.countdown === "number") {
@@ -343,6 +512,86 @@ export function attachClientGame(socket, container, opts = {}) {
       }
     } catch (e) {
       console.error("tickSnapshot handler error:", e, snap);
+    }
+  });
+
+  safeOn("playerInput", (msg) => {
+    try {
+      if (!msg) return;
+      const pid = msg.playerId;
+      const payload = msg.payload || {};
+      if (!localPlayerId && players && localPseudo) {
+        const c = players.find((pl) => pl.pseudo === localPseudo);
+        if (c) localPlayerId = c.id;
+      }
+      if (pid && pid === localPlayerId) return;
+      if (pid && !remoteInputState[pid]) {
+        remoteInputState[pid] = {
+          left: false,
+          right: false,
+          up: false,
+          down: false,
+        };
+      }
+      if (payload.type === "move" && typeof payload.dir === "string") {
+        const dir = payload.dir;
+        const active = !!payload.active;
+        if (dir === "left") remoteInputState[pid].left = active;
+        else if (dir === "right") remoteInputState[pid].right = active;
+        else if (dir === "up") remoteInputState[pid].up = active;
+        else if (dir === "down") remoteInputState[pid].down = active;
+      }
+    } catch (e) {
+      console.error("playerInput handler error", e, msg);
+    }
+  });
+
+  // playerPosition: accept id or pseudo; sync id if needed
+  safeOn("playerPosition", (msg) => {
+    try {
+      if (!msg || !msg.player) return;
+      const p = msg.player;
+      console.debug(
+        "[client] received playerPosition",
+        p,
+        "source:",
+        msg.source
+      );
+
+      // try update by id
+      let found = false;
+      players = players.map((pl) => {
+        if (pl.id === p.id) {
+          found = true;
+          return { ...pl, x: p.x, y: p.y };
+        }
+        return pl;
+      });
+
+      if (!found && p.pseudo) {
+        // try match by pseudo, then sync id
+        for (let i = 0; i < players.length; i++) {
+          if (players[i].pseudo === p.pseudo) {
+            console.debug(
+              "[client] mapping playerPosition by pseudo -> sync id",
+              p.pseudo,
+              p.id
+            );
+            players[i] = { ...players[i], id: p.id, x: p.x, y: p.y };
+            found = true;
+            break;
+          }
+        }
+      }
+
+      if (!found) {
+        console.warn(
+          "[client] playerPosition received for unknown player (no id/no pseudo match):",
+          p
+        );
+      }
+    } catch (e) {
+      console.error("playerPosition handler error", e, msg);
     }
   });
 
@@ -364,22 +613,27 @@ export function attachClientGame(socket, container, opts = {}) {
   function renderState() {
     try {
       if (!started) return;
-      const now =
+      const nowTs =
         typeof performance !== "undefined" ? performance.now() : Date.now();
-      const dt = Math.max(1, now - lastTs);
+      const dt = Math.max(1, nowTs - lastTs);
       fps = Math.round(1000 / dt);
-      lastTs = now;
+      lastTs = nowTs;
+
+      applyLocalMovement(dt);
 
       const gameVNode = GameView({
         map,
         players,
         cellSize,
+        playerScale,
         tilesetUrl: opts.tilesetUrl || "./assets/images/TileSets.png",
         playerSpriteUrl: opts.playerSpriteUrl || "./assets/images/Players.png",
         tileSrcSize,
         tilesPerRow: opts.tilesPerRow || tilesPerRow,
         debug: !!opts.debug,
-        playerScale,
+        debugCollision: !!opts.debugCollision,
+        showCollisionOverlays: opts.showCollisionOverlays !== false,
+        collisionColors: opts.collisionColors || undefined,
       });
 
       const hudVNode = HUD({
@@ -401,8 +655,12 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   }
 
+  attachInputListeners();
+
   (function loop() {
-    renderState();
+    try {
+      renderState();
+    } catch (e) {}
     requestAnimationFrame(loop);
   })();
 
@@ -413,6 +671,7 @@ export function attachClientGame(socket, container, opts = {}) {
         clearEndTimer();
       } catch (e) {}
       started = false;
+      detachInputListeners();
     },
   };
 }
