@@ -1,0 +1,212 @@
+// server/bomb.js
+// Bomb logic for the game server
+
+/**
+ * Place a bomb at the player's position
+ */
+export function placeBomb(lobby, player) {
+  if (!lobby.bombs) lobby.bombs = [];
+
+  // Check if player can place more bombs (max 1 by default)
+  const playerBombCount = lobby.bombs.filter(
+    (b) => b.playerId === player.id
+  ).length;
+  const maxBombs = player.maxBombs || 1;
+
+  if (playerBombCount >= maxBombs) {
+    console.log(
+      `[bomb] Player ${player.pseudo} already has ${maxBombs} bomb(s)`
+    );
+    return null;
+  }
+
+  // Round position to grid cell
+  const bombX = Math.floor(player.x);
+  const bombY = Math.floor(player.y);
+
+  // Check if there's already a bomb at this position
+  const existingBomb = lobby.bombs.find((b) => b.x === bombX && b.y === bombY);
+  if (existingBomb) {
+    console.log(`[bomb] Bomb already exists at (${bombX}, ${bombY})`);
+    return null;
+  }
+
+  const bomb = {
+    id: `${player.id}-${Date.now()}`,
+    playerId: player.id,
+    x: bombX,
+    y: bombY,
+    placedAt: Date.now(),
+    explosionTime: Date.now() + 3000, // 3 seconds
+    range: player.bombRange || 3, // default range of 3
+    playersInside: new Set([player.id]), // Players who can pass through initially
+  };
+
+  lobby.bombs.push(bomb);
+  console.log(
+    `[bomb] Player ${player.pseudo} placed bomb at (${bombX}, ${bombY})`
+  );
+
+  return bomb;
+}
+
+/**
+ * Check if a position has a bomb that should block the player
+ */
+export function isBombBlocking(lobby, playerId, x, y) {
+  if (!lobby.bombs) return false;
+
+  const cellX = Math.floor(x);
+  const cellY = Math.floor(y);
+
+  const bomb = lobby.bombs.find((b) => b.x === cellX && b.y === cellY);
+  if (!bomb) return false;
+
+  // If player is inside the bomb cell, they can leave
+  if (bomb.playersInside.has(playerId)) {
+    return false;
+  }
+
+  // Otherwise, bomb blocks the player
+  return true;
+}
+
+/**
+ * Update bomb player tracking (when player moves out of bomb cell)
+ */
+export function updateBombPlayerTracking(lobby, playerId, x, y) {
+  if (!lobby.bombs) return;
+
+  const cellX = Math.floor(x);
+  const cellY = Math.floor(y);
+
+  lobby.bombs.forEach((bomb) => {
+    // If player was inside and is now outside, remove them
+    if (bomb.playersInside.has(playerId)) {
+      if (bomb.x !== cellX || bomb.y !== cellY) {
+        bomb.playersInside.delete(playerId);
+        console.log(
+          `[bomb] Player ${playerId} left bomb at (${bomb.x}, ${bomb.y})`
+        );
+      }
+    }
+  });
+}
+
+/**
+ * Check and trigger bomb explosions
+ */
+export function checkBombExplosions(lobby, broadcastFunc) {
+  if (!lobby.bombs || lobby.bombs.length === 0) return;
+
+  const now = Date.now();
+  const explodingBombs = lobby.bombs.filter((b) => b.explosionTime <= now);
+
+  explodingBombs.forEach((bomb) => {
+    explodeBomb(lobby, bomb, broadcastFunc);
+  });
+
+  // Remove exploded bombs
+  lobby.bombs = lobby.bombs.filter((b) => b.explosionTime > now);
+}
+
+/**
+ * Explode a bomb and calculate affected cells
+ */
+function explodeBomb(lobby, bomb, broadcastFunc) {
+  console.log(`[bomb] Exploding bomb at (${bomb.x}, ${bomb.y})`);
+
+  const map = lobby.map;
+  if (!map || !map.grid) return;
+
+  const explosionCells = calculateExplosion(map, bomb.x, bomb.y, bomb.range);
+
+  // Destroy blocks in explosion range
+  const destroyedBlocks = [];
+  explosionCells.forEach((cell) => {
+    if (map.grid[cell.y] && map.grid[cell.y][cell.x] === "block") {
+      map.grid[cell.y][cell.x] = "floor";
+      destroyedBlocks.push({ x: cell.x, y: cell.y });
+    }
+  });
+
+  // Check if players are hit
+  const hitPlayers = [];
+  lobby.players.forEach((player) => {
+    const playerCellX = Math.floor(player.x);
+    const playerCellY = Math.floor(player.y);
+
+    const isHit = explosionCells.some(
+      (cell) => cell.x === playerCellX && cell.y === playerCellY
+    );
+    if (isHit) {
+      hitPlayers.push(player.id);
+      // TODO: Handle player death/damage
+      console.log(`[bomb] Player ${player.pseudo} hit by explosion!`);
+    }
+  });
+
+  // Broadcast explosion event
+  broadcastFunc("bombExplode", {
+    bomb: {
+      id: bomb.id,
+      x: bomb.x,
+      y: bomb.y,
+      range: bomb.range,
+    },
+    explosionCells,
+    destroyedBlocks,
+    hitPlayers,
+    timestamp: Date.now(),
+  });
+
+  // If blocks were destroyed, broadcast updated map
+  if (destroyedBlocks.length > 0) {
+    broadcastFunc("mapUpdate", {
+      map: lobby.map,
+      destroyedBlocks,
+    });
+  }
+}
+
+/**
+ * Calculate explosion cells in + pattern
+ */
+function calculateExplosion(map, bombX, bombY, range) {
+  const cells = [{ x: bombX, y: bombY }]; // Center
+
+  const directions = [
+    { dx: 1, dy: 0 }, // right
+    { dx: -1, dy: 0 }, // left
+    { dx: 0, dy: 1 }, // down
+    { dx: 0, dy: -1 }, // up
+  ];
+
+  directions.forEach(({ dx, dy }) => {
+    for (let i = 1; i <= range; i++) {
+      const x = bombX + dx * i;
+      const y = bombY + dy * i;
+
+      // Check bounds
+      if (y < 0 || y >= map.grid.length || x < 0 || x >= map.grid[y].length) {
+        break;
+      }
+
+      const cell = map.grid[y][x];
+
+      // Stop if we hit a wall (don't include it)
+      if (cell === "wall" || cell === "wallDark") {
+        break;
+      }
+
+      cells.push({ x, y });
+
+      // Stop after hitting a block (but include it)
+      if (cell === "block") {
+        break;
+      }
+    }
+  });
+
+  return cells;
+}

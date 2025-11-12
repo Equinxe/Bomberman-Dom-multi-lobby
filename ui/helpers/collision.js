@@ -1,5 +1,5 @@
-// ui/helpers/collision.js
-// Complete collision detection system for Bomberman
+// server/collision.js
+// Server-side collision detection with improved sliding algorithm
 
 /**
  * Check if a cell is solid (wall or block)
@@ -21,35 +21,7 @@ export function isSolidCell(cell) {
 }
 
 /**
- * Check if a cell is destructible (block)
- */
-export function isDestructibleCell(cell) {
-  if (!cell && cell !== 0) return false;
-  if (typeof cell === "string") return cell === "block";
-  if (typeof cell === "object" && cell.type) return cell.type === "block";
-  if (typeof cell === "number") return cell === 1;
-  return false;
-}
-
-/**
- * Check if a cell is indestructible (wall)
- */
-export function isIndestructibleCell(cell) {
-  if (!cell && cell !== 0) return false;
-  if (typeof cell === "string") return cell === "wall" || cell === "wallDark";
-  if (typeof cell === "object" && cell.type)
-    return cell.type === "wall" || cell.type === "wallDark";
-  if (typeof cell === "number") return cell === 0;
-  return false;
-}
-
-/**
  * Get player hitbox in world coordinates
- * Player hitbox is smaller than a full cell (60% of cell size, centered)
- * @param {number} x - Player x position (in cells)
- * @param {number} y - Player y position (in cells)
- * @param {number} hitboxSize - Size of hitbox as ratio of cell (default 0.6)
- * @returns {{left: number, right: number, top: number, bottom: number}}
  */
 export function getPlayerHitbox(x, y, hitboxSize = 0.6) {
   const offset = (1 - hitboxSize) / 2;
@@ -63,10 +35,6 @@ export function getPlayerHitbox(x, y, hitboxSize = 0.6) {
 
 /**
  * Get cell at grid position
- * @param {Array} grid - Map grid
- * @param {number} x - Cell x coordinate
- * @param {number} y - Cell y coordinate
- * @returns {*} Cell value or null if out of bounds
  */
 function getCellAt(grid, x, y) {
   if (!grid || !Array.isArray(grid)) return null;
@@ -76,12 +44,25 @@ function getCellAt(grid, x, y) {
 }
 
 /**
+ * Check if a hitbox overlaps with a solid cell
+ */
+function hitboxOverlapsCell(hitbox, cellX, cellY) {
+  const cellLeft = cellX;
+  const cellRight = cellX + 1;
+  const cellTop = cellY;
+  const cellBottom = cellY + 1;
+
+  // Check AABB collision
+  return !(
+    hitbox.right <= cellLeft ||
+    hitbox.left >= cellRight ||
+    hitbox.bottom <= cellTop ||
+    hitbox.top >= cellBottom
+  );
+}
+
+/**
  * Check collision between player hitbox and map
- * @param {Object} map - Map object with grid
- * @param {number} x - Player x position (in cells)
- * @param {number} y - Player y position (in cells)
- * @param {number} hitboxSize - Hitbox size ratio (default 0.6)
- * @returns {boolean} True if collision detected
  */
 export function checkCollision(map, x, y, hitboxSize = 0.6) {
   if (!map || !map.grid) return false;
@@ -89,17 +70,16 @@ export function checkCollision(map, x, y, hitboxSize = 0.6) {
   const hitbox = getPlayerHitbox(x, y, hitboxSize);
   const grid = map.grid;
 
-  // Get the cells that the hitbox overlaps
+  // Check all cells that the hitbox might overlap
   const minCellX = Math.floor(hitbox.left);
   const maxCellX = Math.floor(hitbox.right);
   const minCellY = Math.floor(hitbox.top);
   const maxCellY = Math.floor(hitbox.bottom);
 
-  // Check each cell the hitbox touches
   for (let cy = minCellY; cy <= maxCellY; cy++) {
     for (let cx = minCellX; cx <= maxCellX; cx++) {
       const cell = getCellAt(grid, cx, cy);
-      if (isSolidCell(cell)) {
+      if (isSolidCell(cell) && hitboxOverlapsCell(hitbox, cx, cy)) {
         return true;
       }
     }
@@ -110,14 +90,7 @@ export function checkCollision(map, x, y, hitboxSize = 0.6) {
 
 /**
  * Resolve collision by adjusting player position
- * Implements sliding along walls for smooth movement
- * @param {Object} map - Map object with grid
- * @param {number} oldX - Previous x position
- * @param {number} oldY - Previous y position
- * @param {number} newX - Desired new x position
- * @param {number} newY - Desired new y position
- * @param {number} hitboxSize - Hitbox size ratio (default 0.6)
- * @returns {{x: number, y: number}} Corrected position
+ * Implements smooth sliding along walls
  */
 export function resolveCollision(
   map,
@@ -127,49 +100,60 @@ export function resolveCollision(
   newY,
   hitboxSize = 0.6
 ) {
-  if (!map || !map.grid) return { x: newX, y: newY };
+  if (!map || !map.grid) {
+    console.warn("[resolveCollision] No map or grid provided");
+    return { x: newX, y: newY };
+  }
 
   // If no collision at new position, allow movement
   if (!checkCollision(map, newX, newY, hitboxSize)) {
     return { x: newX, y: newY };
   }
 
-  // Try moving only on X axis (slide vertically along wall)
-  if (!checkCollision(map, newX, oldY, hitboxSize)) {
-    return { x: newX, y: oldY };
+  // Calculate movement delta
+  const dx = newX - oldX;
+  const dy = newY - oldY;
+
+  // Try horizontal movement only (slide along vertical walls)
+  const tryX = oldX + dx;
+  if (!checkCollision(map, tryX, oldY, hitboxSize)) {
+    return { x: tryX, y: oldY };
   }
 
-  // Try moving only on Y axis (slide horizontally along wall)
-  if (!checkCollision(map, oldX, newY, hitboxSize)) {
-    return { x: oldX, y: newY };
+  // Try vertical movement only (slide along horizontal walls)
+  const tryY = oldY + dy;
+  if (!checkCollision(map, oldX, tryY, hitboxSize)) {
+    return { x: oldX, y: tryY };
   }
 
-  // Can't move, return old position
-  return { x: oldX, y: oldY };
-}
+  // Try smaller incremental movements for smoother sliding
+  const steps = 8;
+  for (let i = steps; i > 0; i--) {
+    const factor = i / steps;
 
-/**
- * Get all cells that player hitbox overlaps
- * Useful for checking which blocks player is touching
- * @param {number} x - Player x position (in cells)
- * @param {number} y - Player y position (in cells)
- * @param {number} hitboxSize - Hitbox size ratio (default 0.6)
- * @returns {Array<{x: number, y: number}>} Array of cell coordinates
- */
-export function getOverlappingCells(x, y, hitboxSize = 0.6) {
-  const hitbox = getPlayerHitbox(x, y, hitboxSize);
-  const cells = [];
+    // Try partial horizontal movement
+    const partialX = oldX + dx * factor;
+    if (!checkCollision(map, partialX, oldY, hitboxSize)) {
+      return { x: partialX, y: oldY };
+    }
 
-  const minCellX = Math.floor(hitbox.left);
-  const maxCellX = Math.floor(hitbox.right);
-  const minCellY = Math.floor(hitbox.top);
-  const maxCellY = Math.floor(hitbox.bottom);
+    // Try partial vertical movement
+    const partialY = oldY + dy * factor;
+    if (!checkCollision(map, oldX, partialY, hitboxSize)) {
+      return { x: oldX, y: partialY };
+    }
 
-  for (let cy = minCellY; cy <= maxCellY; cy++) {
-    for (let cx = minCellX; cx <= maxCellX; cx++) {
-      cells.push({ x: cx, y: cy });
+    // Try diagonal with reduced movement
+    if (!checkCollision(map, partialX, partialY, hitboxSize)) {
+      return { x: partialX, y: partialY };
     }
   }
 
-  return cells;
+  // Can't move at all, return old position
+  console.debug(
+    `[resolveCollision] Blocked: (${oldX.toFixed(2)}, ${oldY.toFixed(
+      2
+    )}) -> (${newX.toFixed(2)}, ${newY.toFixed(2)})`
+  );
+  return { x: oldX, y: oldY };
 }
