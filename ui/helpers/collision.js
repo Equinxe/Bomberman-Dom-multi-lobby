@@ -1,5 +1,5 @@
-// server/collision.js
-// Server-side collision detection with improved sliding algorithm
+// ui/helpers/collision.js
+// Client-side collision helpers
 
 /**
  * Check if a cell is solid (wall or block)
@@ -16,6 +16,55 @@ export function isSolidCell(cell) {
   }
   if (typeof cell === "number") {
     return cell === 0 || cell === 1;
+  }
+  return false;
+}
+
+/**
+ * Check if a cell is a destructible block
+ */
+export function isDestructibleCell(cell) {
+  if (!cell) return false;
+  if (typeof cell === "string") {
+    return cell === "block";
+  }
+  if (typeof cell === "object" && cell.type) {
+    return cell.type === "block";
+  }
+  return false;
+}
+
+/**
+ * Check if a cell is an indestructible wall
+ */
+export function isIndestructibleCell(cell) {
+  if (!cell) return false;
+  if (typeof cell === "string") {
+    return cell === "wall" || cell === "wallDark";
+  }
+  if (typeof cell === "object" && cell.type) {
+    return cell.type === "wall" || cell.type === "wallDark";
+  }
+  return false;
+}
+
+/**
+ * Check if a cell is a wall (indestructible)
+ */
+export function isWallCell(cell) {
+  return isIndestructibleCell(cell);
+}
+
+/**
+ * Check if a cell is floor (walkable)
+ */
+export function isFloorCell(cell) {
+  if (!cell) return false;
+  if (typeof cell === "string") {
+    return cell === "floor";
+  }
+  if (typeof cell === "object" && cell.type) {
+    return cell.type === "floor";
   }
   return false;
 }
@@ -52,7 +101,6 @@ function hitboxOverlapsCell(hitbox, cellX, cellY) {
   const cellTop = cellY;
   const cellBottom = cellY + 1;
 
-  // Check AABB collision
   return !(
     hitbox.right <= cellLeft ||
     hitbox.left >= cellRight ||
@@ -70,7 +118,6 @@ export function checkCollision(map, x, y, hitboxSize = 0.6) {
   const hitbox = getPlayerHitbox(x, y, hitboxSize);
   const grid = map.grid;
 
-  // Check all cells that the hitbox might overlap
   const minCellX = Math.floor(hitbox.left);
   const maxCellX = Math.floor(hitbox.right);
   const minCellY = Math.floor(hitbox.top);
@@ -90,7 +137,6 @@ export function checkCollision(map, x, y, hitboxSize = 0.6) {
 
 /**
  * Resolve collision by adjusting player position
- * Implements smooth sliding along walls
  */
 export function resolveCollision(
   map,
@@ -101,59 +147,44 @@ export function resolveCollision(
   hitboxSize = 0.6
 ) {
   if (!map || !map.grid) {
-    console.warn("[resolveCollision] No map or grid provided");
     return { x: newX, y: newY };
   }
 
-  // If no collision at new position, allow movement
   if (!checkCollision(map, newX, newY, hitboxSize)) {
     return { x: newX, y: newY };
   }
 
-  // Calculate movement delta
   const dx = newX - oldX;
   const dy = newY - oldY;
 
-  // Try horizontal movement only (slide along vertical walls)
   const tryX = oldX + dx;
   if (!checkCollision(map, tryX, oldY, hitboxSize)) {
     return { x: tryX, y: oldY };
   }
 
-  // Try vertical movement only (slide along horizontal walls)
   const tryY = oldY + dy;
   if (!checkCollision(map, oldX, tryY, hitboxSize)) {
     return { x: oldX, y: tryY };
   }
 
-  // Try smaller incremental movements for smoother sliding
   const steps = 8;
   for (let i = steps; i > 0; i--) {
     const factor = i / steps;
 
-    // Try partial horizontal movement
     const partialX = oldX + dx * factor;
     if (!checkCollision(map, partialX, oldY, hitboxSize)) {
       return { x: partialX, y: oldY };
     }
 
-    // Try partial vertical movement
     const partialY = oldY + dy * factor;
     if (!checkCollision(map, oldX, partialY, hitboxSize)) {
       return { x: oldX, y: partialY };
     }
 
-    // Try diagonal with reduced movement
     if (!checkCollision(map, partialX, partialY, hitboxSize)) {
       return { x: partialX, y: partialY };
     }
   }
 
-  // Can't move at all, return old position
-  console.debug(
-    `[resolveCollision] Blocked: (${oldX.toFixed(2)}, ${oldY.toFixed(
-      2
-    )}) -> (${newX.toFixed(2)}, ${newY.toFixed(2)})`
-  );
   return { x: oldX, y: oldY };
 }

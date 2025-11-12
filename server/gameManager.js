@@ -28,14 +28,14 @@ export function startGameForLobby(
   lobbyCode,
   opts = {}
 ) {
-  const mapSeed = makeMapSeed(lobbyCode);
+  const mapSeed = opts.mapSeed || makeMapSeed(lobbyCode);
 
   const payload = {
     players,
     initialCountdown: opts.initialCountdown ?? 10,
     mapSeed,
-    map: opts.mapGrid ?? null, // si tu veux envoyer grid server-side
-    mapOptions: opts.mapOptions ?? { destructibleProb: 0.42 }, // default increased density
+    map: opts.mapGrid ?? null, // ✅ Full grid from server
+    mapOptions: opts.mapOptions ?? { destructibleProb: 0.42 },
   };
 
   // Notify clients in the lobby: broadcastFunc is expected to attach the "type" wrapper

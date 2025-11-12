@@ -2,12 +2,12 @@
 // Provides tileIndexForCell, imgStyleForIndex and tileset cache setup
 
 const TILE_INDICES = {
-  wall: 33,
-  wallDark: 71,
-  floor: 72,
-  blockBase: 422,
-  blockAnimStart: 422,
-  blockAnimEnd: 429,
+  wall: 33, // L0, C33 = Mur indestructible gris
+  wallDark: 71, // L1, C31 = Variante sombre
+  floor: 73, // ✅ L1, C33 = Sol vert (index 1*40+33 = 73)
+  blockBase: 432, // ✅ L10, C31 = Bloc destructible (index 10*40+31 = 431)
+  blockAnimStart: 432,
+  blockAnimEnd: 439,
 };
 
 export function tileIndexForCell(cell) {
@@ -95,4 +95,27 @@ export function imgStyleForIndex(
   const x = -Math.round(tx * tileStride * scale);
   const y = -Math.round(ty * tileStride * scale);
   return `width: ${imgScaledWidth}px; height: auto; image-rendering: pixelated; display:block; transform-origin: 0 0; pointer-events:none; transform: translate(${x}px, ${y}px); border: none;`;
+}
+
+/**
+ * Function for bomb/explosion sprites using row and column
+ */
+export function imgStyleForBombSprite(
+  row,
+  col,
+  tilesetUrl,
+  displayedCell,
+  tileSrcSize = 16,
+  tileSpacing = 1,
+  tilesPerRow = 40
+) {
+  const index = row * tilesPerRow + col;
+  return imgStyleForIndex(
+    index,
+    tilesetUrl,
+    displayedCell,
+    tileSrcSize,
+    tileSpacing,
+    tilesPerRow
+  );
 }

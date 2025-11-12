@@ -1,5 +1,6 @@
 // Updated GameView: tile collision overlays removed (no colored overlays on tiles).
 // Keeps only the player collision debug box (hitbox). Supports playerScale to zoom sprites.
+// ✅ Added bombs and explosions rendering with correct sprites
 import {
   SPRITE_ROWS,
   SPRITE_SIZE,
@@ -14,6 +15,7 @@ import {
 import {
   tileIndexForCell,
   imgStyleForIndex,
+  imgStyleForBombSprite, // ✅ Add this import
   ensureTilesetInfo,
 } from "./../helpers/tiles.js";
 
@@ -21,6 +23,8 @@ export function GameView(options) {
   const {
     map,
     players = [],
+    bombs = [], // ✅ Bombs array
+    explosions = [], // ✅ Explosions array
     cellSize = 24,
     mapScale = 1.6,
     tilesetUrl = "./assets/images/TileSets.png",
@@ -29,9 +33,7 @@ export function GameView(options) {
     tileSpacing = 1,
     tilesPerRow: tilesPerRowOpt = undefined,
     debug = false,
-    // debugCollision controls whether player hitbox is shown
     debugCollision = true,
-    // playerScale controls sprite zoom (e.g. 1.2)
     playerScale = 1.6,
   } = options || {};
 
@@ -85,6 +87,102 @@ export function GameView(options) {
       ];
       tileNodes.push({ tag: "div", attrs: { style: wrapperStyle }, children });
     }
+  }
+
+  // ✅ Render bombs (corrected to show only L6,C32)
+  const bombNodes = [];
+  if (bombs && Array.isArray(bombs)) {
+    bombs.forEach((bomb) => {
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const timeLeft = bomb.explosionTime - now;
+
+      // Blink faster as time runs out
+      const blinkInterval = timeLeft < 1000 ? 100 : 200;
+      const shouldShow = Math.floor(timeLeft / blinkInterval) % 2 === 0;
+
+      if (shouldShow) {
+        const bombLeft = Math.round(bomb.x * displayedCell);
+        const bombTop = Math.round(bomb.y * displayedCell);
+        const bombStyle = `position:absolute; left:${bombLeft}px; top:${bombTop}px; width:${displayedCell}px; height:${displayedCell}px; overflow:hidden; z-index:50;`;
+
+        // Bomb sprite at L6 (row 6), C32 (col 32)
+        const bombImgStyle = imgStyleForBombSprite(
+          6, // row
+          32, // col
+          tilesetUrl,
+          displayedCell,
+          tileSrcSize,
+          tileSpacing,
+          tilesPerRowOpt || 40
+        );
+
+        bombNodes.push({
+          tag: "div",
+          attrs: { style: bombStyle, "data-bomb-id": bomb.id },
+          children: [
+            {
+              tag: "img",
+              attrs: {
+                src: tilesetUrl,
+                style: bombImgStyle,
+                draggable: "false",
+                alt: "bomb",
+              },
+            },
+          ],
+        });
+      }
+    });
+  }
+
+  // ✅ Render explosions (8 frames from L6,C32 to L6,C39 over 3 seconds)
+  const explosionNodes = [];
+  if (explosions && Array.isArray(explosions)) {
+    explosions.forEach((explosion) => {
+      const now =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const elapsed = now - explosion.startTime;
+      const progress = Math.min(1, elapsed / explosion.duration);
+
+      // Animation: 8 frames from C32 to C39 (columns 32-39)
+      const frame = Math.floor(progress * 8);
+      const frameCol = 32 + Math.min(frame, 7); // Columns 32 to 39
+
+      explosion.cells.forEach((cell) => {
+        const expLeft = Math.round(cell.x * displayedCell);
+        const expTop = Math.round(cell.y * displayedCell);
+        const opacity = 1 - progress * 0.2; // Slight fade
+        const expStyle = `position:absolute; left:${expLeft}px; top:${expTop}px; width:${displayedCell}px; height:${displayedCell}px; overflow:hidden; z-index:55; opacity:${opacity};`;
+
+        // Explosion sprite at L6 (row 6), C32-39 (cols 32-39)
+        const expImgStyle = imgStyleForBombSprite(
+          6, // row
+          frameCol, // col 32-39
+          tilesetUrl,
+          displayedCell,
+          tileSrcSize,
+          tileSpacing,
+          tilesPerRowOpt || 40
+        );
+
+        explosionNodes.push({
+          tag: "div",
+          attrs: { style: expStyle },
+          children: [
+            {
+              tag: "img",
+              attrs: {
+                src: tilesetUrl,
+                style: expImgStyle,
+                draggable: "false",
+                alt: "explosion",
+              },
+            },
+          ],
+        });
+      });
+    });
   }
 
   // players
@@ -153,9 +251,15 @@ export function GameView(options) {
   const wrapperStyle = `position:relative;width:${
     cols * displayedCell
   }px;height:${rows * displayedCell}px;background:transparent;overflow:hidden;`;
+
   return {
     tag: "div",
     attrs: { style: wrapperStyle, id: "game-map-root" },
-    children: [...tileNodes, ...playerNodes],
+    children: [
+      ...tileNodes, // z-index: 1
+      ...bombNodes, // z-index: 50
+      ...explosionNodes, // z-index: 55
+      ...playerNodes, // z-index: 60
+    ],
   };
 }

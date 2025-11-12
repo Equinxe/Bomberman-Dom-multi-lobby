@@ -5,11 +5,16 @@
 import WebSocket, { WebSocketServer } from "ws";
 import { LobbyTimer } from "../server/lobby-timer.js";
 import { startGameForLobby, makeMapSeed } from "../server/gameManager.js";
-import { resolveCollision } from "../server/collision.js";
+import { resolveCollision, checkBombCollision } from "../server/collision.js";
+import {
+  placeBomb,
+  checkBombExplosions,
+  updateBombPlayerTracking,
+} from "../server/bomb.js";
 
 const wss = new WebSocketServer({ port: 9001 });
 
-let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'in-game', timer: LobbyTimer, map } }
+let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'in-game', timer: LobbyTimer, map, bombs: [] } }
 
 // ========== MAP GENERATION (same as client) ==========
 function xmur3(str) {
@@ -209,7 +214,9 @@ function ensureLobby(code) {
       queue: [],
       state: "lobby",
       timer: null,
-      map: null, // will be generated on game start
+      map: null,
+      bombs: [], // ✅ Bombs array
+      bombCheckInterval: null, // ✅ Bomb explosion check interval
     };
 
     lobbys[code].code = code;
@@ -225,6 +232,7 @@ function ensureLobby(code) {
       const lobby = lobbys[code];
       if (!lobby) return;
       lobby.state = "in-game";
+      lobby.bombs = []; // ✅ Reset bombs on game start
 
       try {
         // ✅ GENERATE MAP ON SERVER with unique seed from gameManager
@@ -245,11 +253,6 @@ function ensureLobby(code) {
           width: lobby.map.width,
           height: lobby.map.height,
           gridSize: lobby.map.grid.length,
-          sampleCells: {
-            "1,1": lobby.map.grid[1][1],
-            "2,2": lobby.map.grid[2][2],
-            "5,5": lobby.map.grid[5][5],
-          },
         });
 
         // ✅ Send the FULL map grid to clients (not just seed)
@@ -260,11 +263,21 @@ function ensureLobby(code) {
           code,
           {
             initialCountdown: 10,
-            mapGrid: lobby.map, // ✅ Send FULL grid (renamed to match gameManager)
+            mapGrid: lobby.map, // ✅ Send FULL grid
             mapSeed: mapSeed,
             mapOptions: { destructibleProb: 0.42 },
           }
         );
+
+        // ✅ Start bomb check interval
+        if (lobby.bombCheckInterval) {
+          clearInterval(lobby.bombCheckInterval);
+        }
+        lobby.bombCheckInterval = setInterval(() => {
+          checkBombExplosions(lobby, (type, payload) => {
+            broadcast(code, { type, ...payload });
+          });
+        }, 100); // Check every 100ms
 
         // initialize player positions at spawn corners
         const spawns = [
@@ -311,7 +324,15 @@ function exitToLobby(code) {
   const lobby = lobbys[code];
   if (!lobby) return;
   if (lobby.timer) lobby.timer.clearTimer();
+
+  // ✅ Clear bomb check interval
+  if (lobby.bombCheckInterval) {
+    clearInterval(lobby.bombCheckInterval);
+    lobby.bombCheckInterval = null;
+  }
+
   lobby.state = "lobby";
+  lobby.bombs = []; // ✅ Clear bombs
   lobby.players.forEach((p) => (p.ready = false));
   lobby.chat.push({
     system: true,
@@ -395,7 +416,12 @@ function startPlayerMoveInterval(lobby, player) {
     const newX = oldX + moveX;
     const newY = oldY + moveY;
 
-    // ✅ APPLY SERVER-SIDE COLLISION DETECTION with consistent hitbox
+    // ✅ Check bomb collision first
+    if (checkBombCollision(lobby, player.id, newX, newY)) {
+      return; // Blocked by bomb
+    }
+
+    // Apply collision detection
     const resolved = resolveCollision(
       lobby.map,
       oldX,
@@ -405,15 +431,17 @@ function startPlayerMoveInterval(lobby, player) {
       HITBOX_SIZE
     );
 
-    // Update player position
     player.x = resolved.x;
     player.y = resolved.y;
 
-    // Safety clamping only for extreme cases
+    // Safety clamping
     player.x = Math.max(0.3, Math.min(cols - 0.7, player.x));
     player.y = Math.max(0.3, Math.min(rows - 0.7, player.y));
 
-    // Broadcast this player's new position to the lobby
+    // ✅ Update bomb player tracking
+    updateBombPlayerTracking(lobby, player.id, player.x, player.y);
+
+    // Broadcast position
     try {
       const payload = {
         type: "playerPosition",
@@ -667,12 +695,33 @@ wss.on("connection", (ws) => {
 
         return;
       } else if (payload.type === "action") {
-        broadcast(code, {
-          type: "playerAction",
-          playerId,
-          action: payload.action,
-          timestamp: Date.now(),
-        });
+        // ✅ Handle bomb placement
+        if (payload.action === "placeBomb") {
+          const bomb = placeBomb(lobby, player);
+          if (bomb) {
+            // Broadcast bomb placement to all players
+            broadcast(code, {
+              type: "bombPlaced",
+              bomb: {
+                id: bomb.id,
+                x: bomb.x,
+                y: bomb.y,
+                playerId: bomb.playerId,
+                placedAt: bomb.placedAt,
+                explosionTime: bomb.explosionTime,
+              },
+              timestamp: Date.now(),
+            });
+          }
+        } else {
+          // Other actions
+          broadcast(code, {
+            type: "playerAction",
+            playerId,
+            action: payload.action,
+            timestamp: Date.now(),
+          });
+        }
         return;
       }
 

@@ -20,9 +20,9 @@ export function placeBomb(lobby, player) {
     return null;
   }
 
-  // Round position to grid cell
-  const bombX = Math.floor(player.x);
-  const bombY = Math.floor(player.y);
+  // Round position to grid cell (Math.round for better centering)
+  const bombX = Math.round(player.x);
+  const bombY = Math.round(player.y);
 
   // Check if there's already a bomb at this position
   const existingBomb = lobby.bombs.find((b) => b.x === bombX && b.y === bombY);
@@ -52,41 +52,88 @@ export function placeBomb(lobby, player) {
 
 /**
  * Check if a position has a bomb that should block the player
+ * Uses hitbox collision for precise detection
  */
-export function isBombBlocking(lobby, playerId, x, y) {
+export function isBombBlocking(lobby, playerId, x, y, hitboxSize = 0.6) {
   if (!lobby.bombs) return false;
 
-  const cellX = Math.floor(x);
-  const cellY = Math.floor(y);
+  // Get player's hitbox
+  const playerHitbox = {
+    left: x + (1 - hitboxSize) / 2,
+    right: x + (1 - hitboxSize) / 2 + hitboxSize,
+    top: y + (1 - hitboxSize) / 2,
+    bottom: y + (1 - hitboxSize) / 2 + hitboxSize,
+  };
 
-  const bomb = lobby.bombs.find((b) => b.x === cellX && b.y === cellY);
-  if (!bomb) return false;
+  for (const bomb of lobby.bombs) {
+    // If player is inside the bomb cell, they can move freely
+    if (bomb.playersInside.has(playerId)) {
+      continue;
+    }
 
-  // If player is inside the bomb cell, they can leave
-  if (bomb.playersInside.has(playerId)) {
-    return false;
+    // Bomb occupies the entire cell from bomb.x to bomb.x+1, bomb.y to bomb.y+1
+    const bombLeft = bomb.x;
+    const bombRight = bomb.x + 1;
+    const bombTop = bomb.y;
+    const bombBottom = bomb.y + 1;
+
+    // Check AABB collision between player hitbox and bomb cell
+    const collides = !(
+      playerHitbox.right <= bombLeft ||
+      playerHitbox.left >= bombRight ||
+      playerHitbox.bottom <= bombTop ||
+      playerHitbox.top >= bombBottom
+    );
+
+    if (collides) {
+      return true; // Bomb blocks the player
+    }
   }
 
-  // Otherwise, bomb blocks the player
-  return true;
+  return false;
 }
 
 /**
  * Update bomb player tracking (when player moves out of bomb cell)
+ * Uses hitbox to detect when player fully exits bomb
  */
-export function updateBombPlayerTracking(lobby, playerId, x, y) {
+export function updateBombPlayerTracking(
+  lobby,
+  playerId,
+  x,
+  y,
+  hitboxSize = 0.6
+) {
   if (!lobby.bombs) return;
 
-  const cellX = Math.floor(x);
-  const cellY = Math.floor(y);
+  // Get player's hitbox
+  const playerHitbox = {
+    left: x + (1 - hitboxSize) / 2,
+    right: x + (1 - hitboxSize) / 2 + hitboxSize,
+    top: y + (1 - hitboxSize) / 2,
+    bottom: y + (1 - hitboxSize) / 2 + hitboxSize,
+  };
 
   lobby.bombs.forEach((bomb) => {
-    // If player was inside and is now outside, remove them
+    // If player was inside
     if (bomb.playersInside.has(playerId)) {
-      if (bomb.x !== cellX || bomb.y !== cellY) {
+      // Check if player's hitbox is now completely outside bomb cell
+      const bombLeft = bomb.x;
+      const bombRight = bomb.x + 1;
+      const bombTop = bomb.y;
+      const bombBottom = bomb.y + 1;
+
+      // Player is outside if hitbox doesn't overlap with bomb cell
+      const isOutside =
+        playerHitbox.right <= bombLeft ||
+        playerHitbox.left >= bombRight ||
+        playerHitbox.bottom <= bombTop ||
+        playerHitbox.top >= bombBottom;
+
+      if (isOutside) {
         bomb.playersInside.delete(playerId);
         console.log(
-          `[bomb] Player ${playerId} left bomb at (${bomb.x}, ${bomb.y})`
+          `[bomb] Player ${playerId} fully exited bomb at (${bomb.x}, ${bomb.y})`
         );
       }
     }
@@ -141,7 +188,6 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
     );
     if (isHit) {
       hitPlayers.push(player.id);
-      // TODO: Handle player death/damage
       console.log(`[bomb] Player ${player.pseudo} hit by explosion!`);
     }
   });

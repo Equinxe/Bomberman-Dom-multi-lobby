@@ -179,13 +179,18 @@ function attachSocketHandlers() {
   socket.on("gameStart", (data) => {
     try {
       stopGameIfRunning();
-      // Force larger tiles (32x32) to zoom the tileset, playerScale=1.2 keeps sprite slightly larger
+      // ✅ Force larger tiles (32x32) to zoom the tileset, playerScale=1.2 keeps sprite slightly larger
       gameApi = attachClientGame(socket, container, {
-        cellSize: 32,
-        playerScale: 1.2,
+        cellSize: 32, // Taille d'affichage des cellules (zoom x2)
+        tileSrcSize: 16, // ✅ Taille source des tiles dans le PNG (16x16)
+        tileSpacing: 1, // ✅ Espacement de 1 pixel entre les tiles
+        tilesPerRow: 40, // ✅ 40 tiles par ligne dans TileSets.png
+        playerScale: 1.2, // Les joueurs sont 1.2x plus grands que les cellules
         debugCollision: true, // keep player hitbox visible by default
         showCollisionOverlays: false, // do not show tile overlays
         inputEnabled: true,
+        tilesetUrl: "./assets/images/TileSets.png", // ✅ Chemin du tileset
+        playerSpriteUrl: "./assets/images/Players.png", // ✅ Chemin des sprites joueurs
       });
 
       if (data && data.localPseudo) {
@@ -397,7 +402,7 @@ socket.init("ws://localhost:9001");
 // Ensure the initial UI is shown (nickname form if no nickname)
 showLobby();
 
-// Compute auto cell sizes for compatibility (we force 24px tiles at game start)
+// Compute auto cell sizes for compatibility (we force 32px tiles at game start)
 (function initGameClient() {
   const preferredCols = 15;
   const preferredRows = 13;

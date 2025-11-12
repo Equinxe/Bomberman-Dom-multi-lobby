@@ -52,7 +52,6 @@ function hitboxOverlapsCell(hitbox, cellX, cellY) {
   const cellTop = cellY;
   const cellBottom = cellY + 1;
 
-  // Check AABB collision
   return !(
     hitbox.right <= cellLeft ||
     hitbox.left >= cellRight ||
@@ -70,7 +69,6 @@ export function checkCollision(map, x, y, hitboxSize = 0.6) {
   const hitbox = getPlayerHitbox(x, y, hitboxSize);
   const grid = map.grid;
 
-  // Check all cells that the hitbox might overlap
   const minCellX = Math.floor(hitbox.left);
   const maxCellX = Math.floor(hitbox.right);
   const minCellY = Math.floor(hitbox.top);
@@ -90,7 +88,6 @@ export function checkCollision(map, x, y, hitboxSize = 0.6) {
 
 /**
  * Resolve collision by adjusting player position
- * Implements smooth sliding along walls
  */
 export function resolveCollision(
   map,
@@ -105,55 +102,79 @@ export function resolveCollision(
     return { x: newX, y: newY };
   }
 
-  // If no collision at new position, allow movement
   if (!checkCollision(map, newX, newY, hitboxSize)) {
     return { x: newX, y: newY };
   }
 
-  // Calculate movement delta
   const dx = newX - oldX;
   const dy = newY - oldY;
 
-  // Try horizontal movement only (slide along vertical walls)
   const tryX = oldX + dx;
   if (!checkCollision(map, tryX, oldY, hitboxSize)) {
     return { x: tryX, y: oldY };
   }
 
-  // Try vertical movement only (slide along horizontal walls)
   const tryY = oldY + dy;
   if (!checkCollision(map, oldX, tryY, hitboxSize)) {
     return { x: oldX, y: tryY };
   }
 
-  // Try smaller incremental movements for smoother sliding
   const steps = 8;
   for (let i = steps; i > 0; i--) {
     const factor = i / steps;
 
-    // Try partial horizontal movement
     const partialX = oldX + dx * factor;
     if (!checkCollision(map, partialX, oldY, hitboxSize)) {
       return { x: partialX, y: oldY };
     }
 
-    // Try partial vertical movement
     const partialY = oldY + dy * factor;
     if (!checkCollision(map, oldX, partialY, hitboxSize)) {
       return { x: oldX, y: partialY };
     }
 
-    // Try diagonal with reduced movement
     if (!checkCollision(map, partialX, partialY, hitboxSize)) {
       return { x: partialX, y: partialY };
     }
   }
 
-  // Can't move at all, return old position
-  console.debug(
-    `[resolveCollision] Blocked: (${oldX.toFixed(2)}, ${oldY.toFixed(
-      2
-    )}) -> (${newX.toFixed(2)}, ${newY.toFixed(2)})`
-  );
   return { x: oldX, y: oldY };
+}
+
+/**
+ * ✅ Check if position collides with bombs (using hitbox collision)
+ * The bomb blocks the entire cell, but only if the player is not marked as "inside"
+ */
+export function checkBombCollision(lobby, playerId, x, y, hitboxSize = 0.6) {
+  if (!lobby.bombs) return false;
+
+  // Get player's hitbox
+  const playerHitbox = getPlayerHitbox(x, y, hitboxSize);
+
+  for (const bomb of lobby.bombs) {
+    // If player is marked as inside the bomb, they can move freely
+    if (bomb.playersInside.has(playerId)) {
+      continue;
+    }
+
+    // Bomb occupies the entire cell from bomb.x to bomb.x+1, bomb.y to bomb.y+1
+    const bombLeft = bomb.x;
+    const bombRight = bomb.x + 1;
+    const bombTop = bomb.y;
+    const bombBottom = bomb.y + 1;
+
+    // Check AABB collision between player hitbox and bomb cell
+    const collides = !(
+      playerHitbox.right <= bombLeft ||
+      playerHitbox.left >= bombRight ||
+      playerHitbox.bottom <= bombTop ||
+      playerHitbox.top >= bombBottom
+    );
+
+    if (collides) {
+      return true; // Bomb blocks the player
+    }
+  }
+
+  return false;
 }

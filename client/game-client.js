@@ -18,6 +18,8 @@ export function attachClientGame(socket, container, opts = {}) {
 
   let map = null;
   let players = [];
+  let bombs = []; // ✅ Bombs array
+  let explosions = []; // ✅ Explosions array
   let fps = 60;
   let lastTs =
     typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -37,11 +39,9 @@ export function attachClientGame(socket, container, opts = {}) {
 
   const inputEnabled = opts.inputEnabled !== false;
   const playerSpeed =
-    typeof opts.playerSpeed === "number" ? opts.playerSpeed : 4; // cells per second
+    typeof opts.playerSpeed === "number" ? opts.playerSpeed : 4;
 
   const inputState = { left: false, right: false, up: false, down: false };
-
-  // kept for UI feedback only (not used to move remote players anymore)
   const remoteInputState = {};
 
   let localPseudo =
@@ -61,6 +61,7 @@ export function attachClientGame(socket, container, opts = {}) {
       return (h ^= h >>> 16) >>> 0;
     };
   }
+
   function mulberry32(a) {
     return function () {
       a |= 0;
@@ -70,6 +71,7 @@ export function attachClientGame(socket, container, opts = {}) {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
+
   function makeRngFromSeed(seed) {
     if (typeof seed === "number") return mulberry32(seed >>> 0);
     const s = String(seed ?? "0");
@@ -87,7 +89,7 @@ export function attachClientGame(socket, container, opts = {}) {
     const destructibleProb =
       typeof options.destructibleProb === "number"
         ? options.destructibleProb
-        : opts.destructibleProb ?? 0.42; // ✅ Changé de 0.75 à 0.42
+        : opts.destructibleProb ?? 0.42;
     const borderThickness =
       typeof options.borderThickness === "number" ? options.borderThickness : 1;
     const patternSpacing =
@@ -209,7 +211,7 @@ export function attachClientGame(socket, container, opts = {}) {
     };
   }
 
-  // ---------- normalizePlayers (must be available before handlers) ----------
+  // ---------- normalizePlayers ----------
   function normalizePlayers(raw, cols = 15, rows = 13) {
     if (!Array.isArray(raw)) return [];
     const spawns = [
@@ -232,7 +234,7 @@ export function attachClientGame(socket, container, opts = {}) {
     });
   }
 
-  // ---------- countdown / timers (must be available before handlers) ----------
+  // ---------- countdown / timers ----------
   function startCountdown(initial = 600) {
     clearCountdown();
     countdown = initial;
@@ -243,6 +245,7 @@ export function attachClientGame(socket, container, opts = {}) {
       }
     }, 1000);
   }
+
   function clearCountdown() {
     if (countdownInterval) {
       clearInterval(countdownInterval);
@@ -250,11 +253,13 @@ export function attachClientGame(socket, container, opts = {}) {
     }
     countdown = null;
   }
+
   function startEndTimer() {
     clearEndTimer();
     endTimer = 0;
     endTimerInterval = setInterval(() => endTimer++, 1000);
   }
+
   function clearEndTimer() {
     if (endTimerInterval) {
       clearInterval(endTimerInterval);
@@ -287,9 +292,6 @@ export function attachClientGame(socket, container, opts = {}) {
   // ---------- send input to server ----------
   function sendInputToServer(payload) {
     try {
-      // IMPORTANT: wrap payload under the "payload" key so the server receives:
-      // { type: "input", payload: { type: "move", dir: "...", active: true } }
-      // This prevents the payload.type from overriding the outer message type.
       console.debug("[client] sendInputToServer ->", payload);
       socket &&
         typeof socket.send === "function" &&
@@ -365,16 +367,15 @@ export function attachClientGame(socket, container, opts = {}) {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
   }
+
   function detachInputListeners() {
     if (!isBrowser) return;
     window.removeEventListener("keydown", handleKeyDown);
     window.removeEventListener("keyup", handleKeyUp);
   }
 
-  // ✅ PAS DE MOUVEMENT OPTIMISTE LOCAL - Le serveur gère tout avec collision
+  // ✅ PAS DE MOUVEMENT OPTIMISTE LOCAL - Le serveur gère tout
   function applyLocalMovement(dtMs) {
-    // ❌ DÉSACTIVÉ - Le serveur gère maintenant TOUS les mouvements avec collision
-    // On ne fait plus de prédiction côté client pour éviter la désynchronisation
     return;
   }
 
@@ -414,15 +415,8 @@ export function attachClientGame(socket, container, opts = {}) {
           height: map.height,
           gridRows: map.grid.length,
           gridCols: map.grid[0].length,
-          sampleCells: {
-            "0,0": map.grid[0][0],
-            "1,1": map.grid[1] && map.grid[1][1],
-            "2,2": map.grid[2] && map.grid[2][2],
-          },
         });
-      }
-      // ✅ FALLBACK: Generate from seed only if no grid provided
-      else if (payload.mapSeed) {
+      } else if (payload.mapSeed) {
         const seed = payload.mapSeed;
         const mapOptions = payload.mapOptions || {};
         const destructibleProb =
@@ -435,9 +429,7 @@ export function attachClientGame(socket, container, opts = {}) {
             mapOptions.borderThickness ?? opts.borderThickness ?? 1,
         });
         console.log("⚠️ [gameStart] Map generated from seed (fallback):", seed);
-      }
-      // ✅ LAST RESORT: Generate random map
-      else {
+      } else {
         map = generateMapFromSeed(cols, rows, null, {
           destructibleProb: opts.destructibleProb ?? 0.42,
           patternSpacing: opts.patternSpacing ?? 2,
@@ -446,6 +438,10 @@ export function attachClientGame(socket, container, opts = {}) {
         });
         console.warn("⚠️ [gameStart] Map generated randomly (no server data)");
       }
+
+      // ✅ Reset bombs and explosions
+      bombs = [];
+      explosions = [];
 
       score = 0;
       highscore = payload.highscore ?? highscore;
@@ -471,17 +467,13 @@ export function attachClientGame(socket, container, opts = {}) {
     try {
       if (!snap) return;
 
-      // ✅ PRIORITY 1: Use full map grid if provided
       if (
         snap.map &&
         Array.isArray(snap.map.grid) &&
         snap.map.grid.length > 0
       ) {
         map = snap.map;
-        console.debug("[tickSnapshot] Map updated from server grid");
-      }
-      // ✅ FALLBACK: Generate from seed
-      else if (snap.mapSeed) {
+      } else if (snap.mapSeed) {
         const cols = (snap.map && snap.map.width) || opts.cols || 15;
         const rows = (snap.map && snap.map.height) || opts.rows || 13;
         const seed = snap.mapSeed;
@@ -495,7 +487,6 @@ export function attachClientGame(socket, container, opts = {}) {
           borderThickness:
             mapOptions.borderThickness ?? opts.borderThickness ?? 1,
         });
-        console.debug("[tickSnapshot] Map regenerated from seed");
       }
 
       if (Array.isArray(snap.players)) {
@@ -563,14 +554,11 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   });
 
-  // ✅ playerPosition: ACCEPTER TOUTES les positions du serveur (y compris joueur local)
   safeOn("playerPosition", (msg) => {
     try {
       if (!msg || !msg.player) return;
       const p = msg.player;
 
-      // ✅ ACCEPT ALL positions from server (including local player)
-      // Le serveur a la collision pour tout le monde, on fait confiance à ses positions
       let found = false;
       players = players.map((pl) => {
         if (pl.id === p.id || pl.pseudo === p.pseudo) {
@@ -581,7 +569,6 @@ export function attachClientGame(socket, container, opts = {}) {
       });
 
       if (!found && p.pseudo) {
-        // try match by pseudo, then sync id
         for (let i = 0; i < players.length; i++) {
           if (players[i].pseudo === p.pseudo) {
             players[i] = { ...players[i], id: p.id, x: p.x, y: p.y };
@@ -599,6 +586,63 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   });
 
+  // ✅ Bomb handlers
+  safeOn("bombPlaced", (msg) => {
+    try {
+      if (!msg || !msg.bomb) return;
+      console.log("[client] Bomb placed:", msg.bomb);
+
+      bombs.push({
+        id: msg.bomb.id,
+        x: msg.bomb.x,
+        y: msg.bomb.y,
+        playerId: msg.bomb.playerId,
+        placedAt: msg.bomb.placedAt,
+        explosionTime: msg.bomb.explosionTime,
+      });
+    } catch (e) {
+      console.error("bombPlaced handler error", e, msg);
+    }
+  });
+
+  safeOn("bombExplode", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Bomb exploded:", msg);
+
+      // Remove bomb from list
+      bombs = bombs.filter((b) => b.id !== msg.bomb.id);
+
+      // Add explosion animation (3 seconds with 8 frames)
+      explosions.push({
+        id: msg.bomb.id,
+        cells: msg.explosionCells,
+        startTime: Date.now(),
+        duration: 3000, // ✅ 3000ms = 3 seconds for L6,C32-39 animation
+      });
+
+      // Remove explosion after animation
+      setTimeout(() => {
+        explosions = explosions.filter((e) => e.id !== msg.bomb.id);
+      }, 3000); // ✅ 3000ms
+    } catch (e) {
+      console.error("bombExplode handler error", e, msg);
+    }
+  });
+
+  safeOn("mapUpdate", (msg) => {
+    try {
+      if (!msg || !msg.map) return;
+      console.log(
+        "[client] Map updated, blocks destroyed:",
+        msg.destroyedBlocks
+      );
+      map = msg.map;
+    } catch (e) {
+      console.error("mapUpdate handler error", e, msg);
+    }
+  });
+
   safeOn("gameOver", () => {
     try {
       clearCountdown();
@@ -607,9 +651,11 @@ export function attachClientGame(socket, container, opts = {}) {
       console.error("gameOver handler error", e);
     }
   });
+
   safeOn("scoreUpdate", (s) => {
     if (typeof s.score === "number") score = s.score;
   });
+
   safeOn("highscoreUpdate", (h) => {
     if (typeof h.highscore === "number") highscore = h.highscore;
   });
@@ -623,12 +669,11 @@ export function attachClientGame(socket, container, opts = {}) {
       fps = Math.round(1000 / dt);
       lastTs = nowTs;
 
-      // ✅ Pas de mouvement local optimiste - le serveur gère tout
-      // applyLocalMovement(dt); // DÉSACTIVÉ
-
       const gameVNode = GameView({
         map,
         players,
+        bombs, // ✅ Pass bombs
+        explosions, // ✅ Pass explosions
         cellSize,
         playerScale,
         tilesetUrl: opts.tilesetUrl || "./assets/images/TileSets.png",
@@ -674,6 +719,8 @@ export function attachClientGame(socket, container, opts = {}) {
       try {
         clearCountdown();
         clearEndTimer();
+        bombs = []; // ✅ Clear bombs
+        explosions = []; // ✅ Clear explosions
       } catch (e) {}
       started = false;
       detachInputListeners();
