@@ -1,7 +1,6 @@
 // client/game-client.js
 // Réception et application en temps réel des inputs distants (relay server -> playerInput)
-// Le client garde son mouvement optimiste local, et applique pour les autres joueurs le mouvement
-// issu des positions envoyées par le serveur (playerPosition).
+// Le serveur gère TOUS les mouvements avec collision - pas de prédiction côté client
 import { render } from "../Core/dom.js";
 import { GameView } from "../ui/views/GameView.js";
 import { HUD } from "../ui/components/Hud.js";
@@ -88,7 +87,7 @@ export function attachClientGame(socket, container, opts = {}) {
     const destructibleProb =
       typeof options.destructibleProb === "number"
         ? options.destructibleProb
-        : opts.destructibleProb ?? 0.75;
+        : opts.destructibleProb ?? 0.42; // ✅ Changé de 0.75 à 0.42
     const borderThickness =
       typeof options.borderThickness === "number" ? options.borderThickness : 1;
     const patternSpacing =
@@ -372,30 +371,11 @@ export function attachClientGame(socket, container, opts = {}) {
     window.removeEventListener("keyup", handleKeyUp);
   }
 
+  // ✅ PAS DE MOUVEMENT OPTIMISTE LOCAL - Le serveur gère tout avec collision
   function applyLocalMovement(dtMs) {
-    if (!players || !players.length) return;
-    const pseudo =
-      localPseudo ||
-      (typeof window !== "undefined" && window.__LOCAL_NICKNAME) ||
-      null;
-    if (!pseudo) return;
-    const idx = players.findIndex(
-      (p) => p.pseudo === pseudo || p.id === pseudo
-    );
-    if (idx === -1) return;
-    const p = players[idx];
-    const speedCellsPerSec = playerSpeed;
-    const delta = (dtMs / 1000) * speedCellsPerSec;
-    let dx = 0,
-      dy = 0;
-    if (inputState.left) dx -= delta;
-    if (inputState.right) dx += delta;
-    if (inputState.up) dy -= delta;
-    if (inputState.down) dy += delta;
-    if (dx === 0 && dy === 0) return;
-    const newX = typeof p.x === "number" ? p.x + dx : p.x;
-    const newY = typeof p.y === "number" ? p.y + dy : p.y;
-    players[idx] = { ...p, x: newX, y: newY };
+    // ❌ DÉSACTIVÉ - Le serveur gère maintenant TOUS les mouvements avec collision
+    // On ne fait plus de prédiction côté client pour éviter la désynchronisation
+    return;
   }
 
   safeOn("gameStart", (payload) => {
@@ -420,17 +400,33 @@ export function attachClientGame(socket, container, opts = {}) {
         }
       });
 
+      // ✅ PRIORITY 1: Use map grid from server if available
       if (
         payload.map &&
         Array.isArray(payload.map.grid) &&
-        payload.map.grid.length
+        payload.map.grid.length > 0 &&
+        payload.map.grid[0] &&
+        payload.map.grid[0].length > 0
       ) {
         map = payload.map;
-      } else {
-        const seed = payload.mapSeed || null;
+        console.log("✅ [gameStart] Map received from server with grid:", {
+          width: map.width,
+          height: map.height,
+          gridRows: map.grid.length,
+          gridCols: map.grid[0].length,
+          sampleCells: {
+            "0,0": map.grid[0][0],
+            "1,1": map.grid[1] && map.grid[1][1],
+            "2,2": map.grid[2] && map.grid[2][2],
+          },
+        });
+      }
+      // ✅ FALLBACK: Generate from seed only if no grid provided
+      else if (payload.mapSeed) {
+        const seed = payload.mapSeed;
         const mapOptions = payload.mapOptions || {};
         const destructibleProb =
-          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.75;
+          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.42;
         map = generateMapFromSeed(cols, rows, seed, {
           destructibleProb,
           patternSpacing: mapOptions.patternSpacing ?? opts.patternSpacing ?? 2,
@@ -438,6 +434,17 @@ export function attachClientGame(socket, container, opts = {}) {
           borderThickness:
             mapOptions.borderThickness ?? opts.borderThickness ?? 1,
         });
+        console.log("⚠️ [gameStart] Map generated from seed (fallback):", seed);
+      }
+      // ✅ LAST RESORT: Generate random map
+      else {
+        map = generateMapFromSeed(cols, rows, null, {
+          destructibleProb: opts.destructibleProb ?? 0.42,
+          patternSpacing: opts.patternSpacing ?? 2,
+          patternOffset: opts.patternOffset ?? 1,
+          borderThickness: opts.borderThickness ?? 1,
+        });
+        console.warn("⚠️ [gameStart] Map generated randomly (no server data)");
       }
 
       score = 0;
@@ -463,15 +470,24 @@ export function attachClientGame(socket, container, opts = {}) {
   safeOn("tickSnapshot", (snap) => {
     try {
       if (!snap) return;
-      if (snap.map && Array.isArray(snap.map.grid) && snap.map.grid.length) {
+
+      // ✅ PRIORITY 1: Use full map grid if provided
+      if (
+        snap.map &&
+        Array.isArray(snap.map.grid) &&
+        snap.map.grid.length > 0
+      ) {
         map = snap.map;
-      } else if (snap.map || snap.mapSeed) {
+        console.debug("[tickSnapshot] Map updated from server grid");
+      }
+      // ✅ FALLBACK: Generate from seed
+      else if (snap.mapSeed) {
         const cols = (snap.map && snap.map.width) || opts.cols || 15;
         const rows = (snap.map && snap.map.height) || opts.rows || 13;
-        const seed = snap.mapSeed || null;
+        const seed = snap.mapSeed;
         const mapOptions = snap.mapOptions || {};
         const destructibleProb =
-          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.75;
+          mapOptions.destructibleProb ?? opts.destructibleProb ?? 0.42;
         map = generateMapFromSeed(cols, rows, seed, {
           destructibleProb,
           patternSpacing: mapOptions.patternSpacing ?? opts.patternSpacing ?? 2,
@@ -479,6 +495,7 @@ export function attachClientGame(socket, container, opts = {}) {
           borderThickness:
             mapOptions.borderThickness ?? opts.borderThickness ?? 1,
         });
+        console.debug("[tickSnapshot] Map regenerated from seed");
       }
 
       if (Array.isArray(snap.players)) {
@@ -546,24 +563,19 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   });
 
-  // playerPosition: accept id or pseudo; sync id if needed
+  // ✅ playerPosition: ACCEPTER TOUTES les positions du serveur (y compris joueur local)
   safeOn("playerPosition", (msg) => {
     try {
       if (!msg || !msg.player) return;
       const p = msg.player;
-      console.debug(
-        "[client] received playerPosition",
-        p,
-        "source:",
-        msg.source
-      );
 
-      // try update by id
+      // ✅ ACCEPT ALL positions from server (including local player)
+      // Le serveur a la collision pour tout le monde, on fait confiance à ses positions
       let found = false;
       players = players.map((pl) => {
-        if (pl.id === p.id) {
+        if (pl.id === p.id || pl.pseudo === p.pseudo) {
           found = true;
-          return { ...pl, x: p.x, y: p.y };
+          return { ...pl, id: p.id, x: p.x, y: p.y };
         }
         return pl;
       });
@@ -572,11 +584,6 @@ export function attachClientGame(socket, container, opts = {}) {
         // try match by pseudo, then sync id
         for (let i = 0; i < players.length; i++) {
           if (players[i].pseudo === p.pseudo) {
-            console.debug(
-              "[client] mapping playerPosition by pseudo -> sync id",
-              p.pseudo,
-              p.id
-            );
             players[i] = { ...players[i], id: p.id, x: p.x, y: p.y };
             found = true;
             break;
@@ -585,10 +592,7 @@ export function attachClientGame(socket, container, opts = {}) {
       }
 
       if (!found) {
-        console.warn(
-          "[client] playerPosition received for unknown player (no id/no pseudo match):",
-          p
-        );
+        console.warn("[client] playerPosition received for unknown player:", p);
       }
     } catch (e) {
       console.error("playerPosition handler error", e, msg);
@@ -619,7 +623,8 @@ export function attachClientGame(socket, container, opts = {}) {
       fps = Math.round(1000 / dt);
       lastTs = nowTs;
 
-      applyLocalMovement(dt);
+      // ✅ Pas de mouvement local optimiste - le serveur gère tout
+      // applyLocalMovement(dt); // DÉSACTIVÉ
 
       const gameVNode = GameView({
         map,

@@ -4,11 +4,159 @@
 // IMPORTANT: imports are relative to this file location (../server/...)
 import WebSocket, { WebSocketServer } from "ws";
 import { LobbyTimer } from "../server/lobby-timer.js";
-import { startGameForLobby } from "../server/gameManager.js";
+import { startGameForLobby, makeMapSeed } from "../server/gameManager.js";
+import { resolveCollision } from "../server/collision.js";
 
 const wss = new WebSocketServer({ port: 9001 });
 
 let lobbys = {}; // { code: { players: [], chat: [], queue: [], state: "lobby"|'in-game', timer: LobbyTimer, map } }
+
+// ========== MAP GENERATION (same as client) ==========
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeRngFromSeed(seed) {
+  if (typeof seed === "number") return mulberry32(seed >>> 0);
+  const s = String(seed ?? "0");
+  const hfn = xmur3(s);
+  const seedNum = hfn();
+  return mulberry32(seedNum);
+}
+
+function generateMapFromSeed(cols = 15, rows = 13, seed = null, options = {}) {
+  const destructibleProb = options.destructibleProb ?? 0.42;
+  const borderThickness = options.borderThickness ?? 1;
+  const patternSpacing = options.patternSpacing ?? 2;
+  const patternOffset = options.patternOffset ?? 1;
+
+  const finalSeed =
+    seed || String(Date.now()) + "-" + Math.floor(Math.random() * 1e6);
+  const rng = makeRngFromSeed(finalSeed);
+
+  const grid = Array.from({ length: rows }, () =>
+    Array.from({ length: cols }, () => "floor")
+  );
+
+  const spawns = [
+    { x: 1, y: 1, name: "TL" },
+    { x: cols - 2, y: rows - 2, name: "BR" },
+    { x: cols - 2, y: 1, name: "TR" },
+    { x: 1, y: rows - 2, name: "BL" },
+  ];
+  const spawnOffsets = {
+    TL: [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+    ],
+    TR: [
+      [0, 0],
+      [-1, 0],
+      [0, 1],
+    ],
+    BR: [
+      [0, 0],
+      [-1, 0],
+      [0, -1],
+    ],
+    BL: [
+      [0, 0],
+      [1, 0],
+      [0, -1],
+    ],
+  };
+  const reserved = new Set();
+  for (let i = 0; i < spawns.length; i++) {
+    const s = spawns[i];
+    const offs = spawnOffsets[s.name] || [[0, 0]];
+    for (const o of offs) {
+      const rx = s.x + o[0];
+      const ry = s.y + o[1];
+      if (rx >= 0 && rx < cols && ry >= 0 && ry < rows)
+        reserved.add(`${rx},${ry}`);
+    }
+  }
+  function isReserved(x, y) {
+    if (reserved.has(`${x},${y}`)) return true;
+    if (
+      (x <= 1 && y <= 1) ||
+      (x >= cols - 2 && y <= 1) ||
+      (x <= 1 && y >= rows - 2) ||
+      (x >= cols - 2 && y >= rows - 2)
+    )
+      return true;
+    return false;
+  }
+
+  // Border walls
+  for (let t = 0; t < borderThickness; t++) {
+    const topY = t;
+    const bottomY = rows - 1 - t;
+    for (let x = 0; x < cols; x++) {
+      grid[topY][x] = "wall";
+      grid[bottomY][x] = "wall";
+    }
+    const leftX = t;
+    const rightX = cols - 1 - t;
+    for (let y = 0; y < rows; y++) {
+      grid[y][leftX] = "wall";
+      grid[y][rightX] = "wall";
+    }
+  }
+
+  // Pattern walls
+  const start = borderThickness + patternOffset;
+  for (let y = start; y < rows - borderThickness; y++) {
+    for (let x = start; x < cols - borderThickness; x++) {
+      if (isReserved(x, y)) continue;
+      if (
+        (x - start) % patternSpacing === 0 &&
+        (y - start) % patternSpacing === 0
+      ) {
+        grid[y][x] = "wall";
+      }
+    }
+  }
+
+  // Random blocks
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (grid[y][x] !== "floor") continue;
+      if (isReserved(x, y)) continue;
+      const r = rng();
+      if (r < destructibleProb) grid[y][x] = "block";
+    }
+  }
+
+  return {
+    grid,
+    width: cols,
+    height: rows,
+    cellSize: 16,
+    seed: finalSeed,
+  };
+}
+// ========== END MAP GENERATION ==========
 
 function randLobbyCode() {
   return Math.random().toString(36).slice(2, 7).toUpperCase();
@@ -61,10 +209,9 @@ function ensureLobby(code) {
       queue: [],
       state: "lobby",
       timer: null,
-      map: null, // optional map data if server-side provided later
+      map: null, // will be generated on game start
     };
 
-    // give the object its code
     lobbys[code].code = code;
 
     const broadcastForThisLobby = (type, payload = {}) => {
@@ -78,8 +225,34 @@ function ensureLobby(code) {
       const lobby = lobbys[code];
       if (!lobby) return;
       lobby.state = "in-game";
+
       try {
-        // Start the game manager which broadcasts 'gameStart' to the lobby with a payload
+        // ✅ GENERATE MAP ON SERVER with unique seed from gameManager
+        const mapSeed = makeMapSeed(code);
+        const cols = 15;
+        const rows = 13;
+
+        // ✅ GENERATE ONCE on server
+        lobby.map = generateMapFromSeed(cols, rows, mapSeed, {
+          destructibleProb: 0.42,
+          borderThickness: 1,
+          patternSpacing: 2,
+          patternOffset: 1,
+        });
+
+        console.log(`✅ [lobby ${code}] Map generated ONCE on server:`, {
+          seed: mapSeed,
+          width: lobby.map.width,
+          height: lobby.map.height,
+          gridSize: lobby.map.grid.length,
+          sampleCells: {
+            "1,1": lobby.map.grid[1][1],
+            "2,2": lobby.map.grid[2][2],
+            "5,5": lobby.map.grid[5][5],
+          },
+        });
+
+        // ✅ Send the FULL map grid to clients (not just seed)
         startGameForLobby(
           (type, payload) => broadcastForThisLobby(type, payload),
           code,
@@ -87,13 +260,13 @@ function ensureLobby(code) {
           code,
           {
             initialCountdown: 10,
+            mapGrid: lobby.map, // ✅ Send FULL grid (renamed to match gameManager)
+            mapSeed: mapSeed,
             mapOptions: { destructibleProb: 0.42 },
           }
         );
 
-        // initialize player positions if not set (spawn corners) using default map size
-        const cols = (lobby.map && lobby.map.width) || 15;
-        const rows = (lobby.map && lobby.map.height) || 13;
+        // initialize player positions at spawn corners
         const spawns = [
           { x: 1, y: 1 }, // TL
           { x: cols - 2, y: rows - 2 }, // BR
@@ -114,6 +287,10 @@ function ensureLobby(code) {
             down: false,
           };
           p._moveInterval = p._moveInterval || null;
+
+          console.log(
+            `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y})`
+          );
         });
       } catch (e) {
         console.error("Error calling startGameForLobby", e);
@@ -162,39 +339,47 @@ function exitToLobby(code) {
 
 // ------------------ Per-player movement relay (server-side integration) ------------------
 
-// We'll create per-player movement intervals: when a keydown arrives, start an interval
-// that integrates position at MOVE_HZ and broadcasts updated position to lobby.
-// Stop the interval when no movement keys are active.
 const MOVE_HZ = 60; // updates per second for each moving player
 const MOVE_INTERVAL_MS = Math.round(1000 / MOVE_HZ);
 const SPEED_CELLS_PER_SEC = 4; // how many tiles per second the player moves (same as client)
+const HITBOX_SIZE = 0.6; // ✅ Constant hitbox size for consistency
 
 // helper to start per-player movement interval
 function startPlayerMoveInterval(lobby, player) {
   if (player._moveInterval) return;
   console.log(
-    `[server] starting move interval for player ${player.id} in lobby ${lobby.code}`
+    `[server] starting move interval for player ${player.id} (${player.pseudo}) in lobby ${lobby.code}`
   );
+
   player._moveInterval = setInterval(() => {
-    // ensure lobby/map sizes
-    const cols = (lobby.map && lobby.map.width) || 15;
-    const rows = (lobby.map && lobby.map.height) || 13;
+    // ✅ CHECK: Ensure map exists
+    if (!lobby.map || !lobby.map.grid) {
+      console.warn(
+        `[server] No map for lobby ${lobby.code}, skipping movement`
+      );
+      return;
+    }
+
+    const cols = lobby.map.width || 15;
+    const rows = lobby.map.height || 13;
     const input = player._inputState || {
       left: false,
       right: false,
       up: false,
       down: false,
     };
+
     let vx = 0,
       vy = 0;
     if (input.left) vx -= 1;
     if (input.right) vx += 1;
     if (input.up) vy -= 1;
     if (input.down) vy += 1;
+
     if (vx === 0 && vy === 0) {
-      // nothing to do
       return;
     }
+
     const dt = MOVE_INTERVAL_MS / 1000;
     const len = Math.sqrt(vx * vx + vy * vy) || 1;
     const nx = vx / len;
@@ -205,10 +390,30 @@ function startPlayerMoveInterval(lobby, player) {
     if (typeof player.x !== "number") player.x = 1;
     if (typeof player.y !== "number") player.y = 1;
 
-    player.x = Math.max(0, Math.min(cols - 1, player.x + moveX));
-    player.y = Math.max(0, Math.min(rows - 1, player.y + moveY));
+    const oldX = player.x;
+    const oldY = player.y;
+    const newX = oldX + moveX;
+    const newY = oldY + moveY;
 
-    // broadcast only this player's new position to the lobby
+    // ✅ APPLY SERVER-SIDE COLLISION DETECTION with consistent hitbox
+    const resolved = resolveCollision(
+      lobby.map,
+      oldX,
+      oldY,
+      newX,
+      newY,
+      HITBOX_SIZE
+    );
+
+    // Update player position
+    player.x = resolved.x;
+    player.y = resolved.y;
+
+    // Safety clamping only for extreme cases
+    player.x = Math.max(0.3, Math.min(cols - 0.7, player.x));
+    player.y = Math.max(0.3, Math.min(rows - 0.7, player.y));
+
+    // Broadcast this player's new position to the lobby
     try {
       const payload = {
         type: "playerPosition",
@@ -221,14 +426,6 @@ function startPlayerMoveInterval(lobby, player) {
         source: "server-move",
         ts: Date.now(),
       };
-      // debug log
-      console.log(
-        `[server] broadcast playerPosition for ${player.id} (${
-          player.pseudo
-        }) -> x=${player.x.toFixed(3)}, y=${player.y.toFixed(3)} (lobby ${
-          lobby.code
-        })`
-      );
       broadcast(lobby.code, payload);
     } catch (e) {
       console.error("[startPlayerMoveInterval] broadcast error", e);
@@ -238,7 +435,9 @@ function startPlayerMoveInterval(lobby, player) {
 
 function stopPlayerMoveInterval(player) {
   if (player._moveInterval) {
-    console.log(`[server] stop move interval for player ${player.id}`);
+    console.log(
+      `[server] stop move interval for player ${player.id} (${player.pseudo})`
+    );
     clearInterval(player._moveInterval);
     player._moveInterval = null;
   }
@@ -250,7 +449,7 @@ wss.on("connection", (ws) => {
   let id = Math.random().toString(36).slice(2);
   ws.id = id;
   ws.lobbyCode = null;
-  ws.playerId = null; // will be set when joining as player
+  ws.playerId = null;
 
   broadcastPlayerCountAll();
 
@@ -280,7 +479,7 @@ wss.on("connection", (ws) => {
       }
 
       const lobby = ensureLobby(ws.lobbyCode);
-      lobby.code = ws.lobbyCode; // keep code for broadcast helper usage
+      lobby.code = ws.lobbyCode;
 
       if (
         !lobby.players.some((p) => p.id === id) &&
@@ -317,10 +516,8 @@ wss.on("connection", (ws) => {
         const player = { id, pseudo: data.pseudo, color: 0, ready: false, ws };
         lobby.players.push(player);
 
-        // associate ws with playerId for input handling
         ws.playerId = id;
 
-        // initialize movement helpers
         player._inputState = {
           left: false,
           right: false,
@@ -433,12 +630,10 @@ wss.on("connection", (ws) => {
 
       const payload = data.payload || {};
 
-      // only handle move/action payloads
       if (payload.type === "move" && typeof payload.dir === "string") {
         const dir = payload.dir;
         const active = !!payload.active;
 
-        // ensure player's helper state exists
         player._inputState = player._inputState || {
           left: false,
           right: false,
@@ -451,12 +646,6 @@ wss.on("connection", (ws) => {
         else if (dir === "up") player._inputState.up = active;
         else if (dir === "down") player._inputState.down = active;
 
-        // debug log
-        console.log(
-          `[server] input from ${playerId} dir=${dir} active=${active} (lobby ${code})`
-        );
-
-        // if any direction is active, ensure interval running
         const anyActive =
           player._inputState.left ||
           player._inputState.right ||
@@ -465,11 +654,10 @@ wss.on("connection", (ws) => {
         if (anyActive) {
           startPlayerMoveInterval(lobby, player);
         } else {
-          // stop moving if nothing is pressed
           stopPlayerMoveInterval(player);
         }
 
-        // Also broadcast the input to other clients (so they can animate locally if desired)
+        // Broadcast input state for UI feedback (not for movement)
         broadcast(code, {
           type: "playerInput",
           playerId,
@@ -479,7 +667,6 @@ wss.on("connection", (ws) => {
 
         return;
       } else if (payload.type === "action") {
-        // immediate action handling (e.g. placeBomb)
         broadcast(code, {
           type: "playerAction",
           playerId,
@@ -523,7 +710,6 @@ wss.on("connection", (ws) => {
         text: `${leaving.pseudo} a quitté le lobby`,
         time: now(),
       });
-      // cleanup interval if any
       stopPlayerMoveInterval(leaving);
     } else {
       const qidx = lobby.queue.findIndex((q) => q.id === id);

@@ -20,3 +20,6 @@ export const SPRITE_SIZE = 24;
 export const SPRITE_ZOOM = 3;
 export const SHEET_WIDTH = 303;
 export const SHEET_HEIGHT = 687;
+
+// Collision constants
+export const PLAYER_HITBOX_SIZE = 0.6; // Player hitbox is 60% of a cell (centered)
