@@ -5,6 +5,9 @@ import {
   SHEET_WIDTH,
   SHEET_HEIGHT,
 } from "./../helpers/constants.js";
+import { getTransparentSpriteBgUrl } from "../helpers/sprite-loader.js";
+
+const PLAYER_SPRITE_URL = "./assets/images/Players.png";
 
 // PlayerPreview: extrait depuis ui/lobby.js — rend une preview animée du sprite
 export function PlayerPreview({ colorIdx, uniqueId }) {
@@ -34,12 +37,12 @@ export function PlayerPreview({ colorIdx, uniqueId }) {
   const displayOffsetPerFrame = frameXs.map((frameX) => frameX + cropShift);
   const posYpx = -posY * SPRITE_ZOOM;
   const framePositionsPx = displayOffsetPerFrame.map(
-    (x) => `-${x * SPRITE_ZOOM}px ${posYpx}px`
+    (x) => `-${x * SPRITE_ZOOM}px ${posYpx}px`,
   );
 
   const safeId = `preview_${String(uniqueId).replace(
     /[^a-z0-9_-]/gi,
-    ""
+    "",
   )}_${Math.random().toString(36).slice(2, 6)}`;
   const bgSizeX = SHEET_WIDTH * SPRITE_ZOOM;
   const bgSizeY = SHEET_HEIGHT * SPRITE_ZOOM;
@@ -87,7 +90,7 @@ export function PlayerPreview({ colorIdx, uniqueId }) {
           style: `
             width: ${previewSize}px;
             height: ${previewSize}px;
-            background-image: url('./assets/images/Players.png');
+            background-image: ${getTransparentSpriteBgUrl(PLAYER_SPRITE_URL)};
             background-position: ${framePositionsPx[0]};
             background-size: ${bgSizeX}px ${bgSizeY}px;
             background-repeat: no-repeat;

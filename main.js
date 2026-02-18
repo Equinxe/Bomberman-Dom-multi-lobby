@@ -1,17 +1,21 @@
 // main.js - point d'entrée client (branche test-refactor2)
 // Ajusté : lors du démarrage du jeu on force cellSize 32 (tiles plus grands) et playerScale 1.2.
-import { render, createElement } from "../Core/dom.js";
+import { render, createElement } from "./Core/dom.js";
 import { Nickname } from "./ui/helpers/nickname.js";
 import { Lobby } from "./ui/views/LobbyView.js";
 import { WaitingRoom } from "./ui/views/WaitingRoomView.js";
 import { WSIndicator } from "./ui/components/WsIndicator.js";
 import { PopupError } from "./ui/components/Popup.js";
-import { setState, getState } from "../Core/state.js";
-import { registerEvent, getEventsMap } from "../Core/events.js";
+import { setState, getState } from "./Core/state.js";
+import { registerEvent, getEventsMap } from "./Core/events.js";
 import { socket } from "./multiplayer/socket.js";
 import { attachClientGame } from "./client/game-client.js";
+import { preloadPlayerSprites } from "./ui/helpers/sprite-loader.js";
 
 window.createElement = createElement;
+
+// ✅ Start preprocessing player sprites immediately (removes blue background)
+preloadPlayerSprites();
 
 let lobbyState = { players: [], chat: [], queue: [], code: "" };
 const container = document.getElementById("app");
@@ -54,8 +58,8 @@ function showWSIndicator() {
       WSIndicator({
         connected: wsConnected,
         playerCount,
-      })
-    )
+      }),
+    ),
   );
 }
 
@@ -93,7 +97,7 @@ function showPopupError(message) {
     } catch (e) {
       console.warn(
         "showPopupError: failed to remove popupElem after timeout",
-        e
+        e,
       );
     }
     if (lastErrorPopup === popupElem) lastErrorPopup = null;
@@ -135,7 +139,7 @@ function attachSocketHandlers() {
       data.chat || [],
       data.queue || [],
       data,
-      data.code
+      data.code,
     );
   });
 
@@ -146,7 +150,7 @@ function attachSocketHandlers() {
       data.chat || [],
       data.queue || [],
       data,
-      data.code
+      data.code,
     );
   });
 
@@ -155,16 +159,16 @@ function attachSocketHandlers() {
   });
 
   socket.on("waitingStarted", (data) =>
-    showLobbyCountdown(data.duration, "Préparation")
+    showLobbyCountdown(data.duration, "Préparation"),
   );
   socket.on("waitingTick", (data) =>
-    showLobbyCountdown(data.value, "Préparation")
+    showLobbyCountdown(data.value, "Préparation"),
   );
   socket.on("countdownStart", (data) =>
-    showLobbyCountdown(data.value, "Démarrage")
+    showLobbyCountdown(data.value, "Démarrage"),
   );
   socket.on("countdownTick", (data) =>
-    showLobbyCountdown(data.value, "Démarrage")
+    showLobbyCountdown(data.value, "Démarrage"),
   );
 
   socket.on("waitingCancelled", () => {
@@ -186,7 +190,7 @@ function attachSocketHandlers() {
         tileSpacing: 1, // ✅ Espacement de 1 pixel entre les tiles
         tilesPerRow: 40, // ✅ 40 tiles par ligne dans TileSets.png
         playerScale: 1.2, // Les joueurs sont 1.2x plus grands que les cellules
-        debugCollision: true, // keep player hitbox visible by default
+        debugCollision: false, // ✅ NO debug hitbox
         showCollisionOverlays: false, // do not show tile overlays
         inputEnabled: true,
         tilesetUrl: "./assets/images/TileSets.png", // ✅ Chemin du tileset
@@ -267,7 +271,7 @@ function handleLobbyUpdate(players, chat, queue, waitingMsg, code) {
     if (queue) {
       let idx = queue.findIndex(
         (p) =>
-          p === myPseudo || (typeof p === "object" && p.pseudo === myPseudo)
+          p === myPseudo || (typeof p === "object" && p.pseudo === myPseudo),
       );
       queuePosition = idx === -1 ? queue.length : idx + 1;
     }
@@ -331,8 +335,8 @@ function showLobby() {
           code: lobbyState.code,
         }),
         container,
-        getEventsMap()
-      )
+        getEventsMap(),
+      ),
     );
     showWSIndicator();
     return;
@@ -351,8 +355,8 @@ function showLobby() {
         queuePosition: 0,
       }),
       container,
-      getEventsMap()
-    )
+      getEventsMap(),
+    ),
   );
   showWSIndicator();
 }
@@ -408,11 +412,11 @@ showLobby();
   const preferredRows = 13;
   const vw = Math.max(
     document.documentElement.clientWidth || 0,
-    window.innerWidth || 0
+    window.innerWidth || 0,
   );
   const vh = Math.max(
     document.documentElement.clientHeight || 0,
-    window.innerHeight || 0
+    window.innerHeight || 0,
   );
   const maxWidth = Math.min(920, vw - 80);
   const maxHeight = Math.floor(vh * 0.75);

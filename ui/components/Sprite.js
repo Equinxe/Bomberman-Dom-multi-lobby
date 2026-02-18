@@ -1,31 +1,32 @@
-export * from "../sprite.js";
+// Sprite.js - Player sprite component for lobby/preview
+// Uses Players.png spritesheet (304x687, blue bg, margin=4, sprite=24x24, gap=1, stride=25)
+import { getTransparentSpriteBgUrl } from "../helpers/sprite-loader.js";
+
+const PLAYER_SPRITE_URL = "./assets/images/Players.png";
 
 export function Sprite({
   frame = 0,
   row = 0,
   size = 24,
   className = "",
-  offsetX = 5, // offset initial X demandé
-  offsetY = 5, // offset initial Y demandé
+  offsetX = 0, // ✅ Fixed: extra offset (on top of margin)
+  offsetY = 0, // ✅ Fixed: extra offset (on top of margin)
   zoom = 3,
-  sheetWidth = 303,
+  sheetWidth = 304, // ✅ Fixed: actual width
   sheetHeight = 687,
   id = "",
-  framesCount = 1, // nombre d'images à animer (par ex. 3 -> frames 0,1,2)
-  duration = 0.6, // durée de l'animation en secondes
+  framesCount = 1,
+  duration = 0.6,
 }) {
-  // NOTE: margin et spacing alignés avec votre description : 5px / 1px
-  const margin = 5;
-  const spacing = 1;
-  const x = margin + frame * (size + spacing) + offsetX;
-  const y = margin + row * (size + spacing) + offsetY;
+  const margin = 4; // ✅ Fixed: actual margin in Players.png
+  const spacing = 1; // 1px gap between sprites
+  const stride = size + spacing; // 25px
+  const x = margin + frame * stride + offsetX;
+  const y = margin + row * stride + offsetY;
 
-  // Si on a plusieurs frames, on anime background-position horizontalement
-  // Calcul du début et de la fin (en px) pour background-position
-  const startX = margin + 0 * (size + spacing) + offsetX;
-  const endX =
-    margin + Math.max(0, framesCount - 1) * (size + spacing) + offsetX;
-  const startY = margin + row * (size + spacing) + offsetY;
+  const startX = margin + 0 * stride + offsetX;
+  const endX = margin + Math.max(0, framesCount - 1) * stride + offsetX;
+  const startY = margin + row * stride + offsetY;
 
   // animation unique par id pour éviter collision
   const animName = `sprite_anim_${
@@ -33,6 +34,8 @@ export function Sprite({
   }`;
 
   // Si framesCount > 1, on génère un bloc <style> avec keyframes qui déplace background-position
+  const bgUrl = getTransparentSpriteBgUrl(PLAYER_SPRITE_URL);
+
   if (framesCount > 1) {
     const keyframes = `
 @keyframes ${animName} {
@@ -62,7 +65,7 @@ export function Sprite({
             style: [
               `width:${size * zoom}px`,
               `height:${size * zoom}px`,
-              `background-image:url('./assets/images/Players.png')`,
+              `background-image:${bgUrl}`,
               `background-position:-${startX * zoom}px -${startY * zoom}px`,
               `background-size:${sheetWidth * zoom}px ${sheetHeight * zoom}px`,
               "background-repeat:no-repeat",
@@ -87,7 +90,7 @@ export function Sprite({
       style: [
         `width:${size * zoom}px`,
         `height:${size * zoom}px`,
-        `background-image:url('./assets/images/Players.png')`,
+        `background-image:${bgUrl}`,
         `background-position:-${x * zoom}px -${y * zoom}px`,
         `background-size:${sheetWidth * zoom}px ${sheetHeight * zoom}px`,
         "background-repeat:no-repeat",

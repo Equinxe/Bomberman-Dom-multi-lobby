@@ -20,6 +20,7 @@ export function attachClientGame(socket, container, opts = {}) {
   let players = [];
   let bombs = []; // ✅ Bombs array
   let explosions = []; // ✅ Explosions array
+  let destroyingBlocks = []; // ✅ Block destruction animations
   let fps = 60;
   let lastTs =
     typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -80,16 +81,51 @@ export function attachClientGame(socket, container, opts = {}) {
     return mulberry32(seedNum);
   }
 
+  // ✅ Update player animation based on input state
+  function updatePlayerAnimation(player, inputState) {
+    if (!player.animation) {
+      player.animation = {
+        direction: "down",
+        frame: 0,
+        lastUpdate: Date.now(),
+        isMoving: false,
+      };
+    }
+
+    const now = Date.now();
+    const isMoving =
+      inputState.left || inputState.right || inputState.up || inputState.down;
+
+    // Update direction based on input (last pressed key takes priority)
+    if (inputState.down) player.animation.direction = "down";
+    else if (inputState.up) player.animation.direction = "up";
+    else if (inputState.left) player.animation.direction = "left";
+    else if (inputState.right) player.animation.direction = "right";
+
+    player.animation.isMoving = isMoving;
+
+    // Update animation frame - 4-frame cycle for smooth walk
+    if (isMoving) {
+      if (now - player.animation.lastUpdate > 120) {
+        // 120ms per frame for smoother walk
+        player.animation.frame = (player.animation.frame + 1) % 4; // 4 frames: idle→walkA→idle→walkB
+        player.animation.lastUpdate = now;
+      }
+    } else {
+      player.animation.frame = 0; // Idle frame
+    }
+  }
+
   function generateMapFromSeed(
     cols = 15,
     rows = 13,
     seed = null,
-    options = {}
+    options = {},
   ) {
     const destructibleProb =
       typeof options.destructibleProb === "number"
         ? options.destructibleProb
-        : opts.destructibleProb ?? 0.42;
+        : (opts.destructibleProb ?? 0.42);
     const borderThickness =
       typeof options.borderThickness === "number" ? options.borderThickness : 1;
     const patternSpacing =
@@ -111,7 +147,7 @@ export function attachClientGame(socket, container, opts = {}) {
     const rng = makeRngFromSeed(finalSeed);
 
     const grid = Array.from({ length: rows }, () =>
-      Array.from({ length: cols }, () => "floor")
+      Array.from({ length: cols }, () => "floor"),
     );
 
     const spawns = [
@@ -279,7 +315,7 @@ export function attachClientGame(socket, container, opts = {}) {
             console.error(
               `[attachClientGame] handler ${eventName} error:`,
               err,
-              payload
+              payload,
             );
           }
         });
@@ -439,9 +475,10 @@ export function attachClientGame(socket, container, opts = {}) {
         console.warn("⚠️ [gameStart] Map generated randomly (no server data)");
       }
 
-      // ✅ Reset bombs and explosions
+      // ✅ Reset bombs, explosions, and block animations
       bombs = [];
       explosions = [];
+      destroyingBlocks = [];
 
       score = 0;
       highscore = payload.highscore ?? highscore;
@@ -493,7 +530,7 @@ export function attachClientGame(socket, container, opts = {}) {
         players = normalizePlayers(
           snap.players,
           map.width || opts.cols || 15,
-          map.height || opts.rows || 13
+          map.height || opts.rows || 13,
         );
         const candidate = players.find((pl) => pl.pseudo === localPseudo);
         if (candidate) localPlayerId = candidate.id;
@@ -613,18 +650,41 @@ export function attachClientGame(socket, container, opts = {}) {
       // Remove bomb from list
       bombs = bombs.filter((b) => b.id !== msg.bomb.id);
 
-      // Add explosion animation (3 seconds with 8 frames)
+      // Add explosion animation (800ms with 5 phases)
       explosions.push({
         id: msg.bomb.id,
         cells: msg.explosionCells,
         startTime: Date.now(),
-        duration: 3000, // ✅ 3000ms = 3 seconds for L6,C32-39 animation
+        duration: 800, // ✅ 800ms for proper explosion timing
       });
+
+      // ✅ Add block destruction animations for destroyed blocks
+      if (msg.destroyedBlocks && Array.isArray(msg.destroyedBlocks)) {
+        msg.destroyedBlocks.forEach((block) => {
+          destroyingBlocks.push({
+            x: block.x,
+            y: block.y,
+            startTime: Date.now(),
+            duration: 800, // 800ms block breaking animation
+          });
+        });
+
+        // Remove block destruction animations after they finish
+        setTimeout(() => {
+          const bombId = msg.bomb.id;
+          const blockPositions = new Set(
+            msg.destroyedBlocks.map((b) => `${b.x},${b.y}`),
+          );
+          destroyingBlocks = destroyingBlocks.filter(
+            (b) => !blockPositions.has(`${b.x},${b.y}`),
+          );
+        }, 850);
+      }
 
       // Remove explosion after animation
       setTimeout(() => {
         explosions = explosions.filter((e) => e.id !== msg.bomb.id);
-      }, 3000); // ✅ 3000ms
+      }, 850); // Slightly longer than duration to ensure last frame renders
     } catch (e) {
       console.error("bombExplode handler error", e, msg);
     }
@@ -635,7 +695,7 @@ export function attachClientGame(socket, container, opts = {}) {
       if (!msg || !msg.map) return;
       console.log(
         "[client] Map updated, blocks destroyed:",
-        msg.destroyedBlocks
+        msg.destroyedBlocks,
       );
       map = msg.map;
     } catch (e) {
@@ -669,11 +729,26 @@ export function attachClientGame(socket, container, opts = {}) {
       fps = Math.round(1000 / dt);
       lastTs = nowTs;
 
+      // ✅ Update animations for all players
+      players.forEach((player) => {
+        const pid = player.id;
+
+        // Update local player animation
+        if (pid === localPlayerId) {
+          updatePlayerAnimation(player, inputState);
+        }
+        // Update remote player animation
+        else if (remoteInputState[pid]) {
+          updatePlayerAnimation(player, remoteInputState[pid]);
+        }
+      });
+
       const gameVNode = GameView({
         map,
         players,
         bombs, // ✅ Pass bombs
         explosions, // ✅ Pass explosions
+        destroyingBlocks, // ✅ Pass block destruction animations
         cellSize,
         playerScale,
         tilesetUrl: opts.tilesetUrl || "./assets/images/TileSets.png",
@@ -719,8 +794,9 @@ export function attachClientGame(socket, container, opts = {}) {
       try {
         clearCountdown();
         clearEndTimer();
-        bombs = []; // ✅ Clear bombs
-        explosions = []; // ✅ Clear explosions
+        bombs = [];
+        explosions = [];
+        destroyingBlocks = [];
       } catch (e) {}
       started = false;
       detachInputListeners();
