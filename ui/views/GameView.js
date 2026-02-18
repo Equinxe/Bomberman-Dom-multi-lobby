@@ -50,6 +50,7 @@ export function GameView(options) {
     debug = false,
     debugCollision = false,
     playerScale = 1.6,
+    localPlayerId = null,
   } = options || {};
 
   const grid = (map && map.grid) || [];
@@ -358,6 +359,8 @@ export function GameView(options) {
         speed: "rgba(50,180,255,0.6)",
         wallpass: "rgba(160,100,255,0.6)",
         detonator: "rgba(255,50,50,0.6)",
+        vest: "rgba(255,220,50,0.8)",
+        skull: "rgba(180,50,255,0.7)",
       };
       const glowColor = glowColors[pu.type] || "rgba(255,255,255,0.4)";
 
@@ -392,6 +395,8 @@ export function GameView(options) {
       speed: "⚡",
       wallpass: "👻",
       detonator: "🎯",
+      vest: "🛡️",
+      skull: "💀",
     };
     pickupFlashes.forEach((flash) => {
       const now = Date.now();
@@ -417,7 +422,12 @@ export function GameView(options) {
   // ✅ Players — original simple pattern restored
   const playersWithPos = (players || []).map((p) => ({ ...p }));
   const playerNodes = playersWithPos
-    .filter((p) => !p.dead) // ✅ Don't render dead players
+    .filter((p) => {
+      if (p.dead) return false; // Don't render dead players
+      // ✅ Skull "invisible" effect: hide from other players, show translucent to self
+      if (p.invisible && p.id !== localPlayerId) return false;
+      return true;
+    })
     .map((p) => {
       const colorIdx = typeof p.color === "number" ? p.color : 0;
       const spriteRow =
@@ -475,26 +485,52 @@ export function GameView(options) {
       // ✅ Invincibility flashing effect
       const now = Date.now();
       const isInvincible = p.invincibleUntil && now < p.invincibleUntil;
-      let invincibilityStyle = "";
-      if (isInvincible) {
-        // Flash every 100ms using timestamp modulo
+      const isVest = !!p.vestActive;
+      const isSkullCursed = !!p.skullEffect;
+      const isInvisible = !!p.invisible;
+      let playerEffectStyle = "";
+      let playerFilter = "";
+
+      if (isVest) {
+        // ✅ Vest: golden flash (slower, more prominent than damage flash)
+        const flashOn = Math.floor(now / 150) % 3; // 3-phase flash
+        playerEffectStyle = `opacity: ${flashOn === 0 ? 1 : flashOn === 1 ? 0.7 : 0.9};`;
+        playerFilter = `drop-shadow(0 0 8px rgba(255,220,50,0.9)) drop-shadow(0 0 16px rgba(255,180,0,0.5))`;
+      } else if (isInvincible) {
+        // Damage invincibility: rapid flash
         const flashOn = Math.floor(now / 100) % 2 === 0;
-        invincibilityStyle = `opacity: ${flashOn ? 1 : 0.25};`;
+        playerEffectStyle = `opacity: ${flashOn ? 1 : 0.25};`;
+      }
+
+      if (isSkullCursed) {
+        // ✅ Skull curse: purple tint
+        playerFilter = `${playerFilter ? playerFilter + " " : ""}drop-shadow(0 0 6px rgba(180,50,255,0.8)) hue-rotate(270deg)`;
+      }
+
+      if (isInvisible && p.id === localPlayerId) {
+        // ✅ Invisible skull effect: translucent to self
+        playerEffectStyle = `opacity: 0.3;`;
+      }
+
+      if (playerFilter) {
+        playerEffectStyle += ` filter: ${playerFilter};`;
       }
 
       const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:visible; ${
         shouldMirror ? "transform: scaleX(-1);" : ""
-      } ${invincibilityStyle}`;
+      } ${playerEffectStyle}`;
 
       const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
 
-      // ✅ Player name tag above sprite
+      // ✅ Player name tag above sprite with status icons
+      const statusPrefix = isVest ? "🛡️" : isSkullCursed ? "💀" : "";
+      const nameColor = isVest ? "#ffdd44" : isSkullCursed ? "#cc66ff" : "#fff";
       const nameTag = {
         tag: "div",
         attrs: {
-          style: `position:absolute; top:${-Math.round(displayedCell * 0.35)}px; left:50%; transform:translateX(-50%)${shouldMirror ? " scaleX(-1)" : ""}; font-family:'Press Start 2P',monospace; font-size:${Math.max(6, Math.round(displayedCell * 0.2))}px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.5); white-space:nowrap; pointer-events:none; text-align:center; letter-spacing:0.5px;`,
+          style: `position:absolute; top:${-Math.round(displayedCell * 0.35)}px; left:50%; transform:translateX(-50%)${shouldMirror ? " scaleX(-1)" : ""}; font-family:'Press Start 2P',monospace; font-size:${Math.max(6, Math.round(displayedCell * 0.2))}px; color:${nameColor}; text-shadow:0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.5); white-space:nowrap; pointer-events:none; text-align:center; letter-spacing:0.5px;`,
         },
-        children: [(p.pseudo || "").slice(0, 6)],
+        children: [`${statusPrefix}${(p.pseudo || "").slice(0, 6)}`],
       };
 
       return {

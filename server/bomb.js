@@ -2,8 +2,31 @@
 // Bomb logic for the game server
 
 // ============= POWER-UP DEFINITIONS =============
-const POWERUP_TYPE_KEYS = ["bombs", "flames", "speed", "wallpass", "detonator"];
+const POWERUP_TYPE_KEYS = ["bombs", "flames", "speed", "wallpass", "detonator", "vest", "skull"];
 const POWERUP_DROP_CHANCE = 0.25; // 25% chance a destroyed block drops a power-up
+
+// ============= SKULL CURSE DEFINITIONS =============
+const SKULL_EFFECTS = [
+  "slow",        // Temporarily reduces speed
+  "fast",        // Radically increases speed (hard to control)
+  "constipation",// Disallows laying bombs
+  "diarrhea",    // Keeps laying bombs at high speed (auto-bomb)
+  "invisible",   // Makes Bomberman invisible to other players
+  "minRange",    // Only one minimum-range bomb at a time
+];
+const SKULL_DURATION = 10000; // 10 seconds
+const VEST_DURATION = 10000; // 10 seconds
+
+// ✅ Score bonuses for power-up pickups
+const POWERUP_SCORE_BONUS = {
+  vest: 500,
+  skull: 6000,
+  bombs: 100,
+  flames: 100,
+  speed: 100,
+  wallpass: 200,
+  detonator: 200,
+};
 
 /**
  * Spawn power-ups from destroyed blocks
@@ -78,10 +101,20 @@ export function checkPowerUpPickup(lobby, player, broadcastFunc) {
       console.log(
         `[bomb] Player ${player.pseudo} picked up ${pu.type} at (${pu.x},${pu.y})`,
       );
+
+      // ✅ Score bonuses for special power-ups
+      const scoreBonus = POWERUP_SCORE_BONUS[pu.type] || 0;
+      if (scoreBonus > 0) {
+        if (typeof player.score !== "number") player.score = 0;
+        player.score += scoreBonus;
+        console.log(`[bomb] Player ${player.pseudo} +${scoreBonus} score (${pu.type}), total: ${player.score}`);
+      }
+
       broadcastFunc("powerUpCollected", {
         powerUpId: pu.id,
         playerId: player.id,
         puType: pu.type,
+        scoreBonus,
         // Send updated player stats
         playerStats: {
           maxBombs: player.maxBombs || 1,
@@ -89,6 +122,14 @@ export function checkPowerUpPickup(lobby, player, broadcastFunc) {
           speed: player.speed || 4,
           wallpass: !!player.wallpass,
           detonator: !!player.detonator,
+          vestActive: !!player.vestActive,
+          vestUntil: player.vestUntil || null,
+          invincibleUntil: player.invincibleUntil || null,
+          skullEffect: player.skullEffect || null,
+          skullUntil: player.skullUntil || null,
+          canPlaceBombs: player.canPlaceBombs !== false,
+          autoBomb: !!player.autoBomb,
+          invisible: !!player.invisible,
         },
       });
     });
@@ -115,6 +156,213 @@ function applyPowerUp(player, type) {
     case "detonator":
       player.detonator = true;
       break;
+    case "vest":
+      // 10 seconds of invincibility
+      player.invincibleUntil = Date.now() + VEST_DURATION;
+      player.vestActive = true;
+      player.vestUntil = Date.now() + VEST_DURATION;
+      console.log(`[bomb] Player ${player.pseudo} is now invincible for 10s (Vest)`);
+      break;
+    case "skull":
+      applySkullCurse(player);
+      break;
+  }
+}
+
+/**
+ * Apply a random skull curse to a player
+ */
+function applySkullCurse(player) {
+  // Clear any existing skull curse first
+  clearSkullCurse(player);
+
+  const effect = SKULL_EFFECTS[Math.floor(Math.random() * SKULL_EFFECTS.length)];
+  const now = Date.now();
+
+  player.skullEffect = effect;
+  player.skullUntil = now + SKULL_DURATION;
+
+  // Save original stats so we can restore them
+  player._preSkull = {
+    speed: player.speed || 4,
+    maxBombs: player.maxBombs || 1,
+    bombRange: player.bombRange || 3,
+  };
+
+  switch (effect) {
+    case "slow":
+      player.speed = 1.5; // Very slow
+      break;
+    case "fast":
+      player.speed = 10; // Uncontrollably fast
+      break;
+    case "constipation":
+      player.canPlaceBombs = false; // Block bomb placement
+      break;
+    case "diarrhea":
+      player.autoBomb = true; // Server will auto-place bombs
+      break;
+    case "minRange":
+      player.maxBombs = 1;
+      player.bombRange = 1;
+      break;
+    case "invisible":
+      player.invisible = true; // Make player invisible
+      break;
+  }
+
+  console.log(`[bomb] Player ${player.pseudo} cursed with skull: ${effect} for ${SKULL_DURATION / 1000}s`);
+}
+
+/**
+ * Clear skull curse and restore original stats
+ */
+function clearSkullCurse(player) {
+  if (!player.skullEffect) return;
+
+  const effect = player.skullEffect;
+
+  // Restore original stats
+  if (player._preSkull) {
+    switch (effect) {
+      case "slow":
+      case "fast":
+        player.speed = player._preSkull.speed;
+        break;
+      case "constipation":
+        delete player.canPlaceBombs;
+        break;
+      case "diarrhea":
+        delete player.autoBomb;
+        break;
+      case "minRange":
+        player.maxBombs = player._preSkull.maxBombs;
+        player.bombRange = player._preSkull.bombRange;
+        break;
+      case "invisible":
+        delete player.invisible;
+        break;
+    }
+    delete player._preSkull;
+  }
+
+  delete player.skullEffect;
+  delete player.skullUntil;
+  console.log(`[bomb] Player ${player.pseudo} skull curse (${effect}) expired`);
+}
+
+/**
+ * Check and expire timed effects (vest, skull) for all players in a lobby.
+ * Also handles skull auto-bomb (diarrhea) and skull contagion.
+ * Called from the bomb check interval on server.
+ */
+export function checkTimedEffects(lobby, broadcastFunc) {
+  if (!lobby.players) return;
+  const now = Date.now();
+
+  lobby.players.forEach((player) => {
+    if (player.dead) return;
+
+    // ✅ Expire vest
+    if (player.vestActive && player.vestUntil && now >= player.vestUntil) {
+      player.vestActive = false;
+      delete player.vestUntil;
+      // Don't remove invincibleUntil here if it was set by a hit — vest just adds extra
+      console.log(`[bomb] Player ${player.pseudo} vest expired`);
+      broadcastFunc("vestExpired", { playerId: player.id });
+    }
+
+    // ✅ Expire skull
+    if (player.skullEffect && player.skullUntil && now >= player.skullUntil) {
+      const oldEffect = player.skullEffect;
+      clearSkullCurse(player);
+      broadcastFunc("skullExpired", { playerId: player.id, effect: oldEffect });
+    }
+
+    // ✅ Skull auto-bomb (diarrhea): place a bomb every ~500ms
+    if (player.autoBomb && !player.dead) {
+      if (!player._lastAutoBomb || now - player._lastAutoBomb > 500) {
+        player._lastAutoBomb = now;
+        const bomb = placeBomb(lobby, player);
+        if (bomb) {
+          broadcastFunc("bombPlaced", {
+            bomb: {
+              id: bomb.id,
+              x: bomb.x,
+              y: bomb.y,
+              playerId: bomb.playerId,
+              placedAt: bomb.placedAt,
+              explosionTime: bomb.explosionTime,
+            },
+            timestamp: now,
+          });
+        }
+      }
+    }
+  });
+
+  // ✅ Skull contagion: if a cursed player touches a non-cursed player, spread it
+  checkSkullContagion(lobby, broadcastFunc);
+}
+
+/**
+ * Check if cursed players touch non-cursed players → spread skull
+ */
+function checkSkullContagion(lobby, broadcastFunc) {
+  if (!lobby.players) return;
+  const now = Date.now();
+  const HITBOX_SIZE = 0.6;
+  const offset = (1 - HITBOX_SIZE) / 2;
+
+  const cursedPlayers = lobby.players.filter(
+    (p) => !p.dead && p.skullEffect && p.skullUntil && now < p.skullUntil
+  );
+  if (cursedPlayers.length === 0) return;
+
+  const cleanPlayers = lobby.players.filter(
+    (p) => !p.dead && !p.skullEffect && typeof p.x === "number"
+  );
+  if (cleanPlayers.length === 0) return;
+
+  for (const cursed of cursedPlayers) {
+    if (typeof cursed.x !== "number") continue;
+
+    const cLeft = cursed.x + offset;
+    const cRight = cursed.x + offset + HITBOX_SIZE;
+    const cTop = cursed.y + offset;
+    const cBottom = cursed.y + offset + HITBOX_SIZE;
+
+    for (const clean of cleanPlayers) {
+      const pLeft = clean.x + offset;
+      const pRight = clean.x + offset + HITBOX_SIZE;
+      const pTop = clean.y + offset;
+      const pBottom = clean.y + offset + HITBOX_SIZE;
+
+      const overlaps = !(
+        cRight <= pLeft ||
+        cLeft >= pRight ||
+        cBottom <= pTop ||
+        cTop >= pBottom
+      );
+
+      if (overlaps) {
+        // Spread the curse!
+        applySkullCurse(clean);
+        broadcastFunc("skullContagion", {
+          fromPlayerId: cursed.id,
+          toPlayerId: clean.id,
+          effect: clean.skullEffect,
+        });
+        // Clear the curse from the spreader
+        const oldEffect = cursed.skullEffect;
+        clearSkullCurse(cursed);
+        broadcastFunc("skullExpired", { playerId: cursed.id, effect: oldEffect });
+        console.log(
+          `[bomb] Skull contagion: ${cursed.pseudo} → ${clean.pseudo} (${clean.skullEffect})`
+        );
+        break; // Only spread to one player per tick
+      }
+    }
   }
 }
 
@@ -149,6 +397,12 @@ export function detonateBombs(lobby, player, broadcastFunc) {
  */
 export function placeBomb(lobby, player) {
   if (!lobby.bombs) lobby.bombs = [];
+
+  // ✅ Block bomb placement if cursed with constipation
+  if (player.canPlaceBombs === false) {
+    console.log(`[bomb] Player ${player.pseudo} can't place bombs (skull: constipation)`);
+    return null;
+  }
 
   // Check if player can place more bombs (max 1 by default)
   const playerBombCount = lobby.bombs.filter(

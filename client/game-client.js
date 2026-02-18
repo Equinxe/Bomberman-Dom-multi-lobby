@@ -664,6 +664,10 @@ export function attachClientGame(socket, container, opts = {}) {
             speed: p.speed !== undefined ? p.speed : pl.speed,
             wallpass: p.wallpass !== undefined ? p.wallpass : pl.wallpass,
             detonator: p.detonator !== undefined ? p.detonator : pl.detonator,
+            vestActive: p.vestActive !== undefined ? p.vestActive : pl.vestActive,
+            skullEffect: p.skullEffect !== undefined ? p.skullEffect : pl.skullEffect,
+            skullUntil: p.skullUntil !== undefined ? p.skullUntil : pl.skullUntil,
+            invisible: p.invisible !== undefined ? p.invisible : pl.invisible,
           };
         }
         return pl;
@@ -826,10 +830,20 @@ export function attachClientGame(socket, container, opts = {}) {
               speed: msg.playerStats.speed,
               wallpass: msg.playerStats.wallpass,
               detonator: msg.playerStats.detonator,
+              vestActive: msg.playerStats.vestActive || false,
+              invincibleUntil: msg.playerStats.invincibleUntil || p.invincibleUntil,
+              skullEffect: msg.playerStats.skullEffect || null,
+              skullUntil: msg.playerStats.skullUntil || null,
+              invisible: msg.playerStats.invisible || false,
             };
           }
           return p;
         });
+      }
+
+      // ✅ Update score on power-up collection
+      if (msg.scoreBonus && msg.playerId === localPlayerId) {
+        score += msg.scoreBonus;
       }
     } catch (e) {
       console.error("powerUpCollected handler error", e, msg);
@@ -845,6 +859,62 @@ export function attachClientGame(socket, container, opts = {}) {
       powerUps = powerUps.filter((pu) => !destroyedSet.has(pu.id));
     } catch (e) {
       console.error("powerUpDestroyed handler error", e, msg);
+    }
+  });
+
+  // ✅ Vest expired handler
+  safeOn("vestExpired", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Vest expired for:", msg.playerId);
+      players = players.map((p) => {
+        if (p.id === msg.playerId) {
+          return { ...p, vestActive: false };
+        }
+        return p;
+      });
+    } catch (e) {
+      console.error("vestExpired handler error", e, msg);
+    }
+  });
+
+  // ✅ Skull expired handler
+  safeOn("skullExpired", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Skull expired for:", msg.playerId, "effect:", msg.effect);
+      players = players.map((p) => {
+        if (p.id === msg.playerId) {
+          return { ...p, skullEffect: null, skullUntil: null, invisible: false };
+        }
+        return p;
+      });
+    } catch (e) {
+      console.error("skullExpired handler error", e, msg);
+    }
+  });
+
+  // ✅ Skull contagion handler
+  safeOn("skullContagion", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Skull contagion:", msg.fromPlayerId, "→", msg.toPlayerId, msg.effect);
+      players = players.map((p) => {
+        if (p.id === msg.toPlayerId) {
+          return {
+            ...p,
+            skullEffect: msg.effect,
+            skullUntil: Date.now() + 10000,
+            invisible: msg.effect === "invisible",
+          };
+        }
+        if (p.id === msg.fromPlayerId) {
+          return { ...p, skullEffect: null, skullUntil: null, invisible: false };
+        }
+        return p;
+      });
+    } catch (e) {
+      console.error("skullContagion handler error", e, msg);
     }
   });
 
@@ -1034,6 +1104,7 @@ export function attachClientGame(socket, container, opts = {}) {
         debugCollision: !!opts.debugCollision,
         showCollisionOverlays: opts.showCollisionOverlays !== false,
         collisionColors: opts.collisionColors || undefined,
+        localPlayerId,
       });
 
       const hudVNode = HUD({

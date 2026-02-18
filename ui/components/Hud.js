@@ -133,6 +133,18 @@ export function HUD({
   const pSpeed = localPlayer.speed || 4;
   const pWallpass = !!localPlayer.wallpass;
   const pDetonator = !!localPlayer.detonator;
+  const pVestActive = !!localPlayer.vestActive;
+  const pSkullEffect = localPlayer.skullEffect || null;
+
+  // Skull effect display names
+  const skullNames = {
+    slow: "SLOW",
+    fast: "FAST",
+    constipation: "NO BOMB",
+    diarrhea: "AUTO💣",
+    invisible: "INVIS",
+    minRange: "MIN",
+  };
 
   const powerUpIcons = [
     {
@@ -170,6 +182,26 @@ export function HUD({
       highlight: pDetonator,
       isBool: true,
     },
+    {
+      emoji: "🛡️",
+      value: pVestActive ? "ON" : "—",
+      label: "VEST",
+      highlight: pVestActive,
+      isBool: true,
+      color: pVestActive ? "#ffdd44" : null,
+    },
+    ...(pSkullEffect
+      ? [
+          {
+            emoji: "💀",
+            value: skullNames[pSkullEffect] || pSkullEffect,
+            label: "CURSE",
+            highlight: true,
+            isBool: true,
+            color: "#ff4444",
+          },
+        ]
+      : []),
   ];
 
   children.push({
@@ -210,7 +242,15 @@ export function HUD({
           {
             tag: "div",
             attrs: { style: "display:flex; gap:8px; align-items:center;" },
-            children: powerUpIcons.map((pu) => ({
+            children: powerUpIcons.map((pu) => {
+              const highlightColor = pu.color || (pu.highlight ? "#3be6aa" : null);
+              const bgColor = pu.color 
+                ? `${pu.color}22` 
+                : (pu.highlight ? "rgba(59,230,170,0.18)" : "rgba(0,0,0,0.3)");
+              const borderColor = pu.color
+                ? `${pu.color}88`
+                : (pu.highlight ? "rgba(59,230,170,0.55)" : "rgba(255,255,255,0.06)");
+              return {
               tag: "div",
               attrs: {
                 style: `
@@ -219,9 +259,9 @@ export function HUD({
                   gap: 4px;
                   padding: 3px 6px;
                   border-radius: 4px;
-                  background: ${pu.highlight ? "rgba(59,230,170,0.18)" : "rgba(0,0,0,0.3)"};
-                  border: 1px solid ${pu.highlight ? "rgba(59,230,170,0.55)" : "rgba(255,255,255,0.06)"};
-                  ${pu.highlight ? "text-shadow: 0 0 6px #3be6aa88;" : ""}
+                  background: ${bgColor};
+                  border: 1px solid ${borderColor};
+                  ${pu.highlight ? `text-shadow: 0 0 6px ${highlightColor || "#3be6aa"}88;` : ""}
                 `,
               },
               children: [
@@ -240,7 +280,7 @@ export function HUD({
                     {
                       tag: "span",
                       attrs: {
-                        style: `font-size:6px; color:${pu.highlight ? "#3be6aa" : "#445"}; letter-spacing:0.5px;`,
+                        style: `font-size:6px; color:${pu.highlight ? (highlightColor || "#3be6aa") : "#445"}; letter-spacing:0.5px;`,
                       },
                       children: [pu.label],
                     },
@@ -254,7 +294,8 @@ export function HUD({
                   ],
                 },
               ],
-            })),
+            };
+            }),
           },
           // Center: Score
           {

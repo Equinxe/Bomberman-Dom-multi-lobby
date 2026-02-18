@@ -12,6 +12,7 @@ import {
   updateBombPlayerTracking,
   checkPowerUpPickup,
   detonateBombs,
+  checkTimedEffects,
 } from "../server/bomb.js";
 
 const wss = new WebSocketServer({ port: 9001 });
@@ -314,6 +315,8 @@ function ensureLobby(code) {
         }
         lobby.bombCheckInterval = setInterval(() => {
           checkBombExplosions(lobby, broadcastWithWinCheck);
+          // ✅ Check timed effects (vest expiry, skull expiry/contagion/auto-bomb)
+          checkTimedEffects(lobby, broadcastWithWinCheck);
         }, 100); // Check every 100ms
 
         // ✅ Start server-side game timer (5 minutes = 300s)
@@ -367,7 +370,7 @@ function ensureLobby(code) {
           p.lives = 3;
           p.dead = false;
           p.deathTime = null;
-          p.invincibleUntil = null;
+          p.invincibleUntil = Date.now() + 3000; // ✅ 3s spawn protection (vest-like effect)
 
           // ✅ Initialize power-up stats
           p.maxBombs = 1;
@@ -375,6 +378,15 @@ function ensureLobby(code) {
           p.speed = 4;
           p.wallpass = false;
           p.detonator = false;
+          p.vestActive = false;
+          p.vestUntil = null;
+          p.skullEffect = null;
+          p.skullUntil = null;
+          p.autoBomb = false;
+          p.invisible = false;
+          delete p.canPlaceBombs;
+          delete p._preSkull;
+          delete p._lastAutoBomb;
 
           console.log(
             `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y}) with ${p.lives} lives`,
@@ -453,6 +465,15 @@ function exitToLobby(code) {
     p.speed = 4;
     p.wallpass = false;
     p.detonator = false;
+    p.vestActive = false;
+    p.vestUntil = null;
+    p.skullEffect = null;
+    p.skullUntil = null;
+    p.autoBomb = false;
+    p.invisible = false;
+    delete p.canPlaceBombs;
+    delete p._preSkull;
+    delete p._lastAutoBomb;
     delete p.x;
     delete p.y;
   });
@@ -591,6 +612,10 @@ function startPlayerMoveInterval(lobby, player) {
           speed: player.speed,
           wallpass: player.wallpass,
           detonator: player.detonator,
+          vestActive: player.vestActive || false,
+          skullEffect: player.skullEffect || null,
+          skullUntil: player.skullUntil || null,
+          invisible: !!player.invisible,
         },
         source: "server-move",
         ts: Date.now(),

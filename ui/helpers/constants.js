@@ -262,6 +262,8 @@ export const POWERUP_TYPE_KEYS = [
   "speed",
   "detonator",
   "wallpass",
+  "vest",
+  "skull",
 ];
 
 // Probability that a destroyed block drops a power-up
