@@ -243,17 +243,22 @@ export function HUD({
             tag: "div",
             attrs: { style: "display:flex; gap:8px; align-items:center;" },
             children: powerUpIcons.map((pu) => {
-              const highlightColor = pu.color || (pu.highlight ? "#3be6aa" : null);
-              const bgColor = pu.color 
-                ? `${pu.color}22` 
-                : (pu.highlight ? "rgba(59,230,170,0.18)" : "rgba(0,0,0,0.3)");
+              const highlightColor =
+                pu.color || (pu.highlight ? "#3be6aa" : null);
+              const bgColor = pu.color
+                ? `${pu.color}22`
+                : pu.highlight
+                  ? "rgba(59,230,170,0.18)"
+                  : "rgba(0,0,0,0.3)";
               const borderColor = pu.color
                 ? `${pu.color}88`
-                : (pu.highlight ? "rgba(59,230,170,0.55)" : "rgba(255,255,255,0.06)");
+                : pu.highlight
+                  ? "rgba(59,230,170,0.55)"
+                  : "rgba(255,255,255,0.06)";
               return {
-              tag: "div",
-              attrs: {
-                style: `
+                tag: "div",
+                attrs: {
+                  style: `
                   display: flex;
                   align-items: center;
                   gap: 4px;
@@ -263,38 +268,38 @@ export function HUD({
                   border: 1px solid ${borderColor};
                   ${pu.highlight ? `text-shadow: 0 0 6px ${highlightColor || "#3be6aa"}88;` : ""}
                 `,
-              },
-              children: [
-                {
-                  tag: "span",
-                  attrs: { style: "font-size:11px;" },
-                  children: [pu.emoji],
                 },
-                {
-                  tag: "div",
-                  attrs: {
-                    style:
-                      "display:flex; flex-direction:column; gap:0; line-height:1;",
+                children: [
+                  {
+                    tag: "span",
+                    attrs: { style: "font-size:11px;" },
+                    children: [pu.emoji],
                   },
-                  children: [
-                    {
-                      tag: "span",
-                      attrs: {
-                        style: `font-size:6px; color:${pu.highlight ? (highlightColor || "#3be6aa") : "#445"}; letter-spacing:0.5px;`,
-                      },
-                      children: [pu.label],
+                  {
+                    tag: "div",
+                    attrs: {
+                      style:
+                        "display:flex; flex-direction:column; gap:0; line-height:1;",
                     },
-                    {
-                      tag: "span",
-                      attrs: {
-                        style: `font-size:9px; color:${pu.highlight ? "#fff" : "#556"}; font-weight:bold;`,
+                    children: [
+                      {
+                        tag: "span",
+                        attrs: {
+                          style: `font-size:6px; color:${pu.highlight ? highlightColor || "#3be6aa" : "#445"}; letter-spacing:0.5px;`,
+                        },
+                        children: [pu.label],
                       },
-                      children: [String(pu.value)],
-                    },
-                  ],
-                },
-              ],
-            };
+                      {
+                        tag: "span",
+                        attrs: {
+                          style: `font-size:9px; color:${pu.highlight ? "#fff" : "#556"}; font-weight:bold;`,
+                        },
+                        children: [String(pu.value)],
+                      },
+                    ],
+                  },
+                ],
+              };
             }),
           },
           // Center: Score

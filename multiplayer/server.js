@@ -297,9 +297,7 @@ function ensureLobby(code) {
           broadcast(code, { type, ...payload });
           if (type === "gameWin" && !lobby._returnToLobbyScheduled) {
             lobby._returnToLobbyScheduled = true;
-            console.log(
-              `[lobby ${code}] Game won — returning to lobby in 5s`,
-            );
+            console.log(`[lobby ${code}] Game won — returning to lobby in 5s`);
             setTimeout(() => {
               lobby._returnToLobbyScheduled = false;
               exitToLobby(code);
@@ -897,7 +895,9 @@ wss.on("connection", (ws) => {
           }
         } else if (payload.action === "detonate") {
           // ✅ Handle detonator power-up action (uses shared win-check broadcast)
-          const winCheckBroadcast = lobby._broadcastWithWinCheck || ((type, p) => broadcast(code, { type, ...p }));
+          const winCheckBroadcast =
+            lobby._broadcastWithWinCheck ||
+            ((type, p) => broadcast(code, { type, ...p }));
           detonateBombs(lobby, player, winCheckBroadcast);
         } else {
           // Other actions

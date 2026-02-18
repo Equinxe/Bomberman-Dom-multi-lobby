@@ -664,9 +664,12 @@ export function attachClientGame(socket, container, opts = {}) {
             speed: p.speed !== undefined ? p.speed : pl.speed,
             wallpass: p.wallpass !== undefined ? p.wallpass : pl.wallpass,
             detonator: p.detonator !== undefined ? p.detonator : pl.detonator,
-            vestActive: p.vestActive !== undefined ? p.vestActive : pl.vestActive,
-            skullEffect: p.skullEffect !== undefined ? p.skullEffect : pl.skullEffect,
-            skullUntil: p.skullUntil !== undefined ? p.skullUntil : pl.skullUntil,
+            vestActive:
+              p.vestActive !== undefined ? p.vestActive : pl.vestActive,
+            skullEffect:
+              p.skullEffect !== undefined ? p.skullEffect : pl.skullEffect,
+            skullUntil:
+              p.skullUntil !== undefined ? p.skullUntil : pl.skullUntil,
             invisible: p.invisible !== undefined ? p.invisible : pl.invisible,
           };
         }
@@ -831,7 +834,8 @@ export function attachClientGame(socket, container, opts = {}) {
               wallpass: msg.playerStats.wallpass,
               detonator: msg.playerStats.detonator,
               vestActive: msg.playerStats.vestActive || false,
-              invincibleUntil: msg.playerStats.invincibleUntil || p.invincibleUntil,
+              invincibleUntil:
+                msg.playerStats.invincibleUntil || p.invincibleUntil,
               skullEffect: msg.playerStats.skullEffect || null,
               skullUntil: msg.playerStats.skullUntil || null,
               invisible: msg.playerStats.invisible || false,
@@ -882,10 +886,20 @@ export function attachClientGame(socket, container, opts = {}) {
   safeOn("skullExpired", (msg) => {
     try {
       if (!msg) return;
-      console.log("[client] Skull expired for:", msg.playerId, "effect:", msg.effect);
+      console.log(
+        "[client] Skull expired for:",
+        msg.playerId,
+        "effect:",
+        msg.effect,
+      );
       players = players.map((p) => {
         if (p.id === msg.playerId) {
-          return { ...p, skullEffect: null, skullUntil: null, invisible: false };
+          return {
+            ...p,
+            skullEffect: null,
+            skullUntil: null,
+            invisible: false,
+          };
         }
         return p;
       });
@@ -898,7 +912,13 @@ export function attachClientGame(socket, container, opts = {}) {
   safeOn("skullContagion", (msg) => {
     try {
       if (!msg) return;
-      console.log("[client] Skull contagion:", msg.fromPlayerId, "→", msg.toPlayerId, msg.effect);
+      console.log(
+        "[client] Skull contagion:",
+        msg.fromPlayerId,
+        "→",
+        msg.toPlayerId,
+        msg.effect,
+      );
       players = players.map((p) => {
         if (p.id === msg.toPlayerId) {
           return {
@@ -909,7 +929,12 @@ export function attachClientGame(socket, container, opts = {}) {
           };
         }
         if (p.id === msg.fromPlayerId) {
-          return { ...p, skullEffect: null, skullUntil: null, invisible: false };
+          return {
+            ...p,
+            skullEffect: null,
+            skullUntil: null,
+            invisible: false,
+          };
         }
         return p;
       });
