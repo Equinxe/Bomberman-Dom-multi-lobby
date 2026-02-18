@@ -59,7 +59,7 @@ function generateMapFromSeed(cols = 15, rows = 13, seed = null, options = {}) {
   const rng = makeRngFromSeed(finalSeed);
 
   const grid = Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, () => "floor")
+    Array.from({ length: cols }, () => "floor"),
   );
 
   const spawns = [
@@ -194,7 +194,7 @@ function broadcast(code, payload) {
 
 function broadcastPlayerCountAll() {
   const count = Array.from(wss.clients).filter(
-    (c) => c.readyState === WebSocket.OPEN
+    (c) => c.readyState === WebSocket.OPEN,
   ).length;
   const msg = JSON.stringify({ type: "playerCountAll", count });
   wss.clients.forEach((client) => {
@@ -227,7 +227,7 @@ function ensureLobby(code) {
 
     const onStartGame = ({ reason, N, R, players }) => {
       console.log(
-        `[lobby ${code}] onStartGame triggered: reason=${reason} N=${N} R=${R}`
+        `[lobby ${code}] onStartGame triggered: reason=${reason} N=${N} R=${R}`,
       );
       const lobby = lobbys[code];
       if (!lobby) return;
@@ -268,7 +268,7 @@ function ensureLobby(code) {
             mapGrid: lobby.map, // ✅ Send FULL grid
             mapSeed: mapSeed,
             mapOptions: { destructibleProb: 0.42 },
-          }
+          },
         );
 
         // ✅ Start bomb check interval
@@ -282,7 +282,9 @@ function ensureLobby(code) {
             // ✅ When a winner is declared, schedule return to lobby after 5s
             if (type === "gameWin" && !lobby._returnToLobbyScheduled) {
               lobby._returnToLobbyScheduled = true;
-              console.log(`[lobby ${code}] Game won — returning to lobby in 5s`);
+              console.log(
+                `[lobby ${code}] Game won — returning to lobby in 5s`,
+              );
               setTimeout(() => {
                 lobby._returnToLobbyScheduled = false;
                 exitToLobby(code);
@@ -320,7 +322,7 @@ function ensureLobby(code) {
           p.invincibleUntil = null;
 
           console.log(
-            `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y}) with ${p.lives} lives`
+            `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y}) with ${p.lives} lives`,
           );
         });
       } catch (e) {
@@ -332,7 +334,7 @@ function ensureLobby(code) {
     lobbys[code].timer = new LobbyTimer(
       broadcastForThisLobby,
       () => lobbys[code].players,
-      onStartGame
+      onStartGame,
     );
   }
   return lobbys[code];
@@ -403,14 +405,14 @@ const HITBOX_SIZE = 0.6; // ✅ Constant hitbox size for consistency
 function startPlayerMoveInterval(lobby, player) {
   if (player._moveInterval) return;
   console.log(
-    `[server] starting move interval for player ${player.id} (${player.pseudo}) in lobby ${lobby.code}`
+    `[server] starting move interval for player ${player.id} (${player.pseudo}) in lobby ${lobby.code}`,
   );
 
   player._moveInterval = setInterval(() => {
     // ✅ CHECK: Ensure map exists
     if (!lobby.map || !lobby.map.grid) {
       console.warn(
-        `[server] No map for lobby ${lobby.code}, skipping movement`
+        `[server] No map for lobby ${lobby.code}, skipping movement`,
       );
       return;
     }
@@ -462,7 +464,7 @@ function startPlayerMoveInterval(lobby, player) {
       oldY,
       newX,
       newY,
-      HITBOX_SIZE
+      HITBOX_SIZE,
     );
 
     player.x = resolved.x;
@@ -501,7 +503,7 @@ function startPlayerMoveInterval(lobby, player) {
 function stopPlayerMoveInterval(player) {
   if (player._moveInterval) {
     console.log(
-      `[server] stop move interval for player ${player.id} (${player.pseudo})`
+      `[server] stop move interval for player ${player.id} (${player.pseudo})`,
     );
     clearInterval(player._moveInterval);
     player._moveInterval = null;
@@ -537,7 +539,10 @@ wss.on("connection", (ws) => {
         ws.lobbyCode = code;
         if (!lobbys[code]) {
           ws.send(
-            JSON.stringify({ type: "error", message: "Ce lobby n'existe pas." })
+            JSON.stringify({
+              type: "error",
+              message: "Ce lobby n'existe pas.",
+            }),
           );
           return;
         }
@@ -561,7 +566,7 @@ wss.on("connection", (ws) => {
               queue: lobby.queue.map((q) => q.pseudo),
               players: lobby.players,
               chat: lobby.chat,
-            })
+            }),
           );
           lobby.chat.push({
             system: true,
@@ -578,7 +583,15 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        const player = { id, pseudo: data.pseudo, color: 0, ready: false, ws, lives: 3, dead: false };
+        const player = {
+          id,
+          pseudo: data.pseudo,
+          color: 0,
+          ready: false,
+          ws,
+          lives: 3,
+          dead: false,
+        };
         lobby.players.push(player);
 
         ws.playerId = id;
@@ -688,7 +701,7 @@ wss.on("connection", (ws) => {
       const player = lobby.players.find((p) => p.id === playerId);
       if (!player) {
         console.warn(
-          `[server] input received but player not found: ${playerId} in lobby ${code}`
+          `[server] input received but player not found: ${playerId} in lobby ${code}`,
         );
         return;
       }
@@ -773,7 +786,7 @@ wss.on("connection", (ws) => {
     if (data.type === "create") {
       ws.emit?.(
         "message",
-        JSON.stringify({ ...data, type: "join", create: true })
+        JSON.stringify({ ...data, type: "join", create: true }),
       );
       return;
     }

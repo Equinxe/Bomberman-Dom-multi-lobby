@@ -316,91 +316,94 @@ export function GameView(options) {
   const playerNodes = playersWithPos
     .filter((p) => !p.dead) // ✅ Don't render dead players
     .map((p) => {
-    const colorIdx = typeof p.color === "number" ? p.color : 0;
-    const spriteRow =
-      (SPRITE_ROWS && SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].row) || 0;
-    const offsetY =
-      (SPRITE_ROWS && SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].offsetY) ||
-      0;
+      const colorIdx = typeof p.color === "number" ? p.color : 0;
+      const spriteRow =
+        (SPRITE_ROWS && SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].row) ||
+        0;
+      const offsetY =
+        (SPRITE_ROWS &&
+          SPRITE_ROWS[colorIdx] &&
+          SPRITE_ROWS[colorIdx].offsetY) ||
+        0;
 
-    const margin = 4;
-    const spacing = 1;
-    const sourceSize = SPRITE_SIZE || 24;
+      const margin = 4;
+      const spacing = 1;
+      const sourceSize = SPRITE_SIZE || 24;
 
-    // ✅ Get animation state
-    const animation = p.animation || {
-      direction: "down",
-      frame: 0,
-      isMoving: false,
-    };
-    const direction = animation.direction || "down";
-    const animFrame = animation.frame || 0;
+      // ✅ Get animation state
+      const animation = p.animation || {
+        direction: "down",
+        frame: 0,
+        isMoving: false,
+      };
+      const direction = animation.direction || "down";
+      const animFrame = animation.frame || 0;
 
-    // ✅ Use PLAYER_ANIMATIONS config for proper 4-frame walk cycle
-    const dirConfig = PLAYER_ANIMATIONS[direction] || PLAYER_ANIMATIONS.down;
-    const shouldMirror = !!dirConfig.mirror;
+      // ✅ Use PLAYER_ANIMATIONS config for proper 4-frame walk cycle
+      const dirConfig = PLAYER_ANIMATIONS[direction] || PLAYER_ANIMATIONS.down;
+      const shouldMirror = !!dirConfig.mirror;
 
-    // Get the actual sprite frame index from the animation config
-    let frameIndex;
-    if (animation.isMoving && dirConfig.frames) {
-      const cycleFrame = animFrame % dirConfig.frames.length;
-      frameIndex = dirConfig.frames[cycleFrame];
-    } else {
-      frameIndex = dirConfig.idleFrame || 0;
-    }
+      // Get the actual sprite frame index from the animation config
+      let frameIndex;
+      if (animation.isMoving && dirConfig.frames) {
+        const cycleFrame = animFrame % dirConfig.frames.length;
+        frameIndex = dirConfig.frames[cycleFrame];
+      } else {
+        frameIndex = dirConfig.idleFrame || 0;
+      }
 
-    // Use playerScale to size sprite target pixels (zoom)
-    const targetPx = Math.round(
-      displayedCell * (typeof playerScale === "number" ? playerScale : 1),
-    );
-    const bgZoom = targetPx / sourceSize;
+      // Use playerScale to size sprite target pixels (zoom)
+      const targetPx = Math.round(
+        displayedCell * (typeof playerScale === "number" ? playerScale : 1),
+      );
+      const bgZoom = targetPx / sourceSize;
 
-    const startX = margin + frameIndex * (sourceSize + spacing);
-    const startY = margin + spriteRow * (sourceSize + spacing) + offsetY;
+      const startX = margin + frameIndex * (sourceSize + spacing);
+      const startY = margin + spriteRow * (sourceSize + spacing) + offsetY;
 
-    const imgOffsetX = -Math.round(startX * bgZoom);
-    const imgOffsetY = -Math.round(startY * bgZoom);
-    const imgWidth = Math.round((SHEET_WIDTH || 304) * bgZoom);
-    const imgHeight = Math.round((SHEET_HEIGHT || 687) * bgZoom);
+      const imgOffsetX = -Math.round(startX * bgZoom);
+      const imgOffsetY = -Math.round(startY * bgZoom);
+      const imgWidth = Math.round((SHEET_WIDTH || 304) * bgZoom);
+      const imgHeight = Math.round((SHEET_HEIGHT || 687) * bgZoom);
 
-    const wrapperLeft = Math.round(p.x * displayedCell);
-    const wrapperTop = Math.round(p.y * displayedCell);
+      const wrapperLeft = Math.round(p.x * displayedCell);
+      const wrapperTop = Math.round(p.y * displayedCell);
 
-    // ✅ Invincibility flashing effect
-    const now = Date.now();
-    const isInvincible = p.invincibleUntil && now < p.invincibleUntil;
-    let invincibilityStyle = "";
-    if (isInvincible) {
-      // Flash every 100ms using timestamp modulo
-      const flashOn = Math.floor(now / 100) % 2 === 0;
-      invincibilityStyle = `opacity: ${flashOn ? 1 : 0.25};`;
-    }
+      // ✅ Invincibility flashing effect
+      const now = Date.now();
+      const isInvincible = p.invincibleUntil && now < p.invincibleUntil;
+      let invincibilityStyle = "";
+      if (isInvincible) {
+        // Flash every 100ms using timestamp modulo
+        const flashOn = Math.floor(now / 100) % 2 === 0;
+        invincibilityStyle = `opacity: ${flashOn ? 1 : 0.25};`;
+      }
 
-    const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:hidden; ${
-      shouldMirror ? "transform: scaleX(-1);" : ""
-    } ${invincibilityStyle}`;
+      const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:hidden; ${
+        shouldMirror ? "transform: scaleX(-1);" : ""
+      } ${invincibilityStyle}`;
 
-    const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
+      const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
 
-    return {
-      tag: "div",
-      attrs: {
-        style: wrapperStyle,
-        "data-player-id": p.id || "",
-      },
-      children: [
-        {
-          tag: "img",
-          attrs: {
-            src: processedPlayerSpriteUrl,
-            style: innerStyle,
-            draggable: "false",
-            alt: "",
-          },
+      return {
+        tag: "div",
+        attrs: {
+          style: wrapperStyle,
+          "data-player-id": p.id || "",
         },
-      ],
-    };
-  });
+        children: [
+          {
+            tag: "img",
+            attrs: {
+              src: processedPlayerSpriteUrl,
+              style: innerStyle,
+              draggable: "false",
+              alt: "",
+            },
+          },
+        ],
+      };
+    });
 
   const wrapperStyle = `position:relative;width:${
     cols * displayedCell

@@ -26,7 +26,7 @@ export function startGameForLobby(
   lobbyRoomCode,
   players,
   lobbyCode,
-  opts = {}
+  opts = {},
 ) {
   const mapSeed = opts.mapSeed || makeMapSeed(lobbyCode);
 

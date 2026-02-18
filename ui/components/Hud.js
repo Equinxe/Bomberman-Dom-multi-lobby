@@ -69,7 +69,8 @@ export function HUD({
           {
             tag: "div",
             attrs: {
-              style: "display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-start;",
+              style:
+                "display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-start;",
             },
             children: players
               .slice(0, 2)
@@ -112,7 +113,8 @@ export function HUD({
           {
             tag: "div",
             attrs: {
-              style: "display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-end;",
+              style:
+                "display:flex; gap:10px; align-items:center; flex:1; justify-content:flex-end;",
             },
             children: players
               .slice(2, 4)
@@ -169,9 +171,7 @@ export function HUD({
             attrs: {
               style: `color: ${endTimer != null ? "#ffaa33" : "#556"};`,
             },
-            children: [
-              endTimer != null ? `ELAPSED ${fmt(endTimer)}` : "",
-            ],
+            children: [endTimer != null ? `ELAPSED ${fmt(endTimer)}` : ""],
           },
           // Right: FPS + HI
           {
@@ -318,7 +318,9 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
             ${isDead ? "" : `box-shadow: 0 0 6px ${color}66;`}
           `,
         },
-        children: [{ tag: "span", children: [isDead ? "☠" : initials.charAt(0)] }],
+        children: [
+          { tag: "span", children: [isDead ? "☠" : initials.charAt(0)] },
+        ],
       },
       // Name + hearts column
       {

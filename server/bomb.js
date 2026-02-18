@@ -9,13 +9,13 @@ export function placeBomb(lobby, player) {
 
   // Check if player can place more bombs (max 1 by default)
   const playerBombCount = lobby.bombs.filter(
-    (b) => b.playerId === player.id
+    (b) => b.playerId === player.id,
   ).length;
   const maxBombs = player.maxBombs || 1;
 
   if (playerBombCount >= maxBombs) {
     console.log(
-      `[bomb] Player ${player.pseudo} already has ${maxBombs} bomb(s)`
+      `[bomb] Player ${player.pseudo} already has ${maxBombs} bomb(s)`,
     );
     return null;
   }
@@ -44,7 +44,7 @@ export function placeBomb(lobby, player) {
 
   lobby.bombs.push(bomb);
   console.log(
-    `[bomb] Player ${player.pseudo} placed bomb at (${bombX}, ${bombY})`
+    `[bomb] Player ${player.pseudo} placed bomb at (${bombX}, ${bombY})`,
   );
 
   return bomb;
@@ -102,7 +102,7 @@ export function updateBombPlayerTracking(
   playerId,
   x,
   y,
-  hitboxSize = 0.6
+  hitboxSize = 0.6,
 ) {
   if (!lobby.bombs) return;
 
@@ -133,7 +133,7 @@ export function updateBombPlayerTracking(
       if (isOutside) {
         bomb.playersInside.delete(playerId);
         console.log(
-          `[bomb] Player ${playerId} fully exited bomb at (${bomb.x}, ${bomb.y})`
+          `[bomb] Player ${playerId} fully exited bomb at (${bomb.x}, ${bomb.y})`,
         );
       }
     }
@@ -224,7 +224,7 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
 
       hitPlayers.push(player.id);
       console.log(
-        `[bomb] Player ${player.pseudo} hit! Lives remaining: ${player.lives}`
+        `[bomb] Player ${player.pseudo} hit! Lives remaining: ${player.lives}`,
       );
 
       // Broadcast playerHit event
@@ -264,11 +264,15 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
 
   // Check win condition: last player standing (only fire once per game)
   const alivePlayers = lobby.players.filter((p) => !p.dead);
-  if (lobby.players.length > 1 && alivePlayers.length <= 1 && !lobby._gameWinBroadcasted) {
+  if (
+    lobby.players.length > 1 &&
+    alivePlayers.length <= 1 &&
+    !lobby._gameWinBroadcasted
+  ) {
     lobby._gameWinBroadcasted = true; // ✅ Prevent repeated gameWin broadcasts
     const winner = alivePlayers[0] || null;
     console.log(
-      `[bomb] Game over! Winner: ${winner ? winner.pseudo : "nobody"}`
+      `[bomb] Game over! Winner: ${winner ? winner.pseudo : "nobody"}`,
     );
     broadcastFunc("gameWin", {
       winnerId: winner ? winner.id : null,
