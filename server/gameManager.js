@@ -32,7 +32,8 @@ export function startGameForLobby(
 
   const payload = {
     players,
-    initialCountdown: opts.initialCountdown ?? 10,
+    initialCountdown: opts.initialCountdown ?? 300,
+    gameTimer: opts.gameTimer ?? opts.initialCountdown ?? 300,
     mapSeed,
     map: opts.mapGrid ?? null, // ✅ Full grid from server
     mapOptions: opts.mapOptions ?? { destructibleProb: 0.42 },

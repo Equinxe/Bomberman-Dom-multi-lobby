@@ -177,20 +177,104 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
     }
   });
 
-  // Check if players are hit
+  // Check if players are hit (with invincibility check)
+  // Uses hitbox-based collision for precise detection
   const hitPlayers = [];
-  lobby.players.forEach((player) => {
-    const playerCellX = Math.floor(player.x);
-    const playerCellY = Math.floor(player.y);
+  const killedPlayers = [];
+  const now = Date.now();
+  const HITBOX_SIZE = 0.6;
 
-    const isHit = explosionCells.some(
-      (cell) => cell.x === playerCellX && cell.y === playerCellY
-    );
+  lobby.players.forEach((player) => {
+    // Skip dead players
+    if (player.dead) return;
+
+    // Skip invincible players
+    if (player.invincibleUntil && now < player.invincibleUntil) {
+      console.log(`[bomb] Player ${player.pseudo} is invincible, skipping hit`);
+      return;
+    }
+
+    if (typeof player.x !== "number" || typeof player.y !== "number") return;
+
+    // Player hitbox
+    const offset = (1 - HITBOX_SIZE) / 2;
+    const pLeft = player.x + offset;
+    const pRight = player.x + offset + HITBOX_SIZE;
+    const pTop = player.y + offset;
+    const pBottom = player.y + offset + HITBOX_SIZE;
+
+    // Check if player hitbox overlaps with any explosion cell
+    const isHit = explosionCells.some((cell) => {
+      // Each explosion cell occupies [cell.x, cell.x+1) x [cell.y, cell.y+1)
+      return !(
+        pRight <= cell.x ||
+        pLeft >= cell.x + 1 ||
+        pBottom <= cell.y ||
+        pTop >= cell.y + 1
+      );
+    });
+
     if (isHit) {
+      // Decrement lives
+      if (typeof player.lives !== "number") player.lives = 3;
+      player.lives = Math.max(0, player.lives - 1);
+
+      // Apply invincibility (2 seconds)
+      player.invincibleUntil = now + 2000;
+
       hitPlayers.push(player.id);
-      console.log(`[bomb] Player ${player.pseudo} hit by explosion!`);
+      console.log(
+        `[bomb] Player ${player.pseudo} hit! Lives remaining: ${player.lives}`
+      );
+
+      // Broadcast playerHit event
+      broadcastFunc("playerHit", {
+        playerId: player.id,
+        lives: player.lives,
+        invincibleUntil: player.invincibleUntil,
+      });
+
+      // Check if player is dead
+      if (player.lives <= 0) {
+        player.dead = true;
+        player.deathTime = now;
+        killedPlayers.push(player.id);
+        console.log(`[bomb] Player ${player.pseudo} has been eliminated!`);
+
+        // Stop their movement
+        if (player._moveInterval) {
+          clearInterval(player._moveInterval);
+          player._moveInterval = null;
+        }
+        player._inputState = {
+          left: false,
+          right: false,
+          up: false,
+          down: false,
+        };
+
+        // Broadcast playerDeath event
+        broadcastFunc("playerDeath", {
+          playerId: player.id,
+          pseudo: player.pseudo,
+        });
+      }
     }
   });
+
+  // Check win condition: last player standing (only fire once per game)
+  const alivePlayers = lobby.players.filter((p) => !p.dead);
+  if (lobby.players.length > 1 && alivePlayers.length <= 1 && !lobby._gameWinBroadcasted) {
+    lobby._gameWinBroadcasted = true; // ✅ Prevent repeated gameWin broadcasts
+    const winner = alivePlayers[0] || null;
+    console.log(
+      `[bomb] Game over! Winner: ${winner ? winner.pseudo : "nobody"}`
+    );
+    broadcastFunc("gameWin", {
+      winnerId: winner ? winner.id : null,
+      winnerPseudo: winner ? winner.pseudo : null,
+    });
+  }
 
   // Broadcast explosion event
   broadcastFunc("bombExplode", {
@@ -203,6 +287,7 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
     explosionCells,
     destroyedBlocks,
     hitPlayers,
+    killedPlayers,
     timestamp: Date.now(),
   });
 

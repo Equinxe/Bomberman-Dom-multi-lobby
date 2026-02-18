@@ -233,6 +233,7 @@ function ensureLobby(code) {
       if (!lobby) return;
       lobby.state = "in-game";
       lobby.bombs = []; // ✅ Reset bombs on game start
+      lobby._gameWinBroadcasted = false; // ✅ Reset win flag for new game
 
       try {
         // ✅ GENERATE MAP ON SERVER with unique seed from gameManager
@@ -262,7 +263,8 @@ function ensureLobby(code) {
           lobby.players,
           code,
           {
-            initialCountdown: 10,
+            initialCountdown: 300, // ✅ 5 minutes game timer (300 seconds)
+            gameTimer: 300, // ✅ Explicit game timer for clarity
             mapGrid: lobby.map, // ✅ Send FULL grid
             mapSeed: mapSeed,
             mapOptions: { destructibleProb: 0.42 },
@@ -276,6 +278,16 @@ function ensureLobby(code) {
         lobby.bombCheckInterval = setInterval(() => {
           checkBombExplosions(lobby, (type, payload) => {
             broadcast(code, { type, ...payload });
+
+            // ✅ When a winner is declared, schedule return to lobby after 5s
+            if (type === "gameWin" && !lobby._returnToLobbyScheduled) {
+              lobby._returnToLobbyScheduled = true;
+              console.log(`[lobby ${code}] Game won — returning to lobby in 5s`);
+              setTimeout(() => {
+                lobby._returnToLobbyScheduled = false;
+                exitToLobby(code);
+              }, 5000);
+            }
           });
         }, 100); // Check every 100ms
 
@@ -301,8 +313,14 @@ function ensureLobby(code) {
           };
           p._moveInterval = p._moveInterval || null;
 
+          // ✅ Initialize lives and death state
+          p.lives = 3;
+          p.dead = false;
+          p.deathTime = null;
+          p.invincibleUntil = null;
+
           console.log(
-            `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y})`
+            `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y}) with ${p.lives} lives`
           );
         });
       } catch (e) {
@@ -333,10 +351,19 @@ function exitToLobby(code) {
 
   lobby.state = "lobby";
   lobby.bombs = []; // ✅ Clear bombs
+  lobby._gameWinBroadcasted = false; // ✅ Reset win flag for next game
+  lobby._returnToLobbyScheduled = false; // ✅ Reset return-to-lobby flag
+
+  // ✅ Find the winner before resetting state
+  const winner = lobby.players.find((p) => !p.dead);
+  const winnerText = winner
+    ? `🏆 ${winner.pseudo} a gagné la partie !`
+    : `La partie est terminée — match nul !`;
+
   lobby.players.forEach((p) => (p.ready = false));
   lobby.chat.push({
     system: true,
-    text: `Retour au lobby demandé — la partie est réinitialisée.`,
+    text: winnerText,
     time: now(),
   });
 
@@ -347,6 +374,13 @@ function exitToLobby(code) {
       p._moveInterval = null;
     }
     p._inputState = { left: false, right: false, up: false, down: false };
+    // ✅ Reset lives/death state for next game
+    p.lives = 3;
+    p.dead = false;
+    p.deathTime = null;
+    p.invincibleUntil = null;
+    delete p.x;
+    delete p.y;
   });
 
   broadcast(code, {
@@ -450,6 +484,9 @@ function startPlayerMoveInterval(lobby, player) {
           pseudo: player.pseudo,
           x: player.x,
           y: player.y,
+          lives: player.lives,
+          dead: player.dead,
+          invincibleUntil: player.invincibleUntil,
         },
         source: "server-move",
         ts: Date.now(),
@@ -541,7 +578,7 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        const player = { id, pseudo: data.pseudo, color: 0, ready: false, ws };
+        const player = { id, pseudo: data.pseudo, color: 0, ready: false, ws, lives: 3, dead: false };
         lobby.players.push(player);
 
         ws.playerId = id;
@@ -657,6 +694,11 @@ wss.on("connection", (ws) => {
       }
 
       const payload = data.payload || {};
+
+      // ✅ Block input for dead players
+      if (player.dead) {
+        return;
+      }
 
       if (payload.type === "move" && typeof payload.dir === "string") {
         const dir = payload.dir;

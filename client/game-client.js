@@ -48,6 +48,7 @@ export function attachClientGame(socket, container, opts = {}) {
   let localPseudo =
     (typeof window !== "undefined" && window.__LOCAL_NICKNAME) || null;
   let localPlayerId = null;
+  let gameWinner = null; // ✅ Track game winner
 
   // ---------- helpers & RNG ----------
   function xmur3(str) {
@@ -266,12 +267,15 @@ export function attachClientGame(socket, container, opts = {}) {
       out.id = out.id ?? out.pseudo ?? `p${i + 1}`;
       out.pseudo = out.pseudo ?? `J${i + 1}`;
       out.color = typeof out.color === "number" ? out.color : (i % 6) + 1;
+      out.lives = typeof out.lives === "number" ? out.lives : 3;
+      out.dead = !!out.dead;
+      out.invincibleUntil = out.invincibleUntil || null;
       return out;
     });
   }
 
   // ---------- countdown / timers ----------
-  function startCountdown(initial = 600) {
+  function startCountdown(initial = 300) {
     clearCountdown();
     countdown = initial;
     countdownInterval = setInterval(() => {
@@ -305,10 +309,12 @@ export function attachClientGame(socket, container, opts = {}) {
   }
 
   // ---------- safeOn wrapper ----------
+  const _registeredHandlers = []; // Track all registered socket handlers for cleanup
+
   function safeOn(eventName, handler) {
     try {
       if (socket && typeof socket.on === "function") {
-        socket.on(eventName, (payload) => {
+        const wrappedHandler = (payload) => {
           try {
             handler(payload);
           } catch (err) {
@@ -318,11 +324,26 @@ export function attachClientGame(socket, container, opts = {}) {
               payload,
             );
           }
-        });
+        };
+        socket.on(eventName, wrappedHandler);
+        _registeredHandlers.push({ eventName, wrappedHandler });
       }
     } catch (e) {
       console.error("safeOn error", e);
     }
+  }
+
+  function removeAllSocketHandlers() {
+    if (socket && typeof socket.off === "function") {
+      _registeredHandlers.forEach(({ eventName, wrappedHandler }) => {
+        try {
+          socket.off(eventName, wrappedHandler);
+        } catch (e) {
+          console.warn("removeAllSocketHandlers: off error", e);
+        }
+      });
+    }
+    _registeredHandlers.length = 0;
   }
 
   // ---------- send input to server ----------
@@ -353,6 +374,10 @@ export function attachClientGame(socket, container, opts = {}) {
   function handleKeyDown(ev) {
     if (!inputEnabled) return;
     if (isTypingInFormElement(ev.target)) return;
+
+    // ✅ Block input if local player is dead
+    const localPlayer = players.find((p) => p.id === localPlayerId);
+    if (localPlayer && localPlayer.dead) return;
 
     const key = (ev.key || "").toLowerCase();
     let changed = false;
@@ -415,7 +440,8 @@ export function attachClientGame(socket, container, opts = {}) {
     return;
   }
 
-  safeOn("gameStart", (payload) => {
+  // ✅ Shared initialization from gameStart payload
+  function initFromGameStart(payload) {
     try {
       const cols = (payload.map && payload.map.width) || opts.cols || 15;
       const rows = (payload.map && payload.map.height) || opts.rows || 13;
@@ -479,13 +505,19 @@ export function attachClientGame(socket, container, opts = {}) {
       bombs = [];
       explosions = [];
       destroyingBlocks = [];
+      gameWinner = null;
 
       score = 0;
       highscore = payload.highscore ?? highscore;
+
+      // ✅ Game timer: 5 minutes (300s) — use gameTimer or initialCountdown from server
       const initial =
-        typeof payload.initialCountdown === "number"
-          ? payload.initialCountdown
-          : 10;
+        typeof payload.gameTimer === "number"
+          ? payload.gameTimer
+          : typeof payload.initialCountdown === "number"
+            ? payload.initialCountdown
+            : 300;
+      console.log(`✅ [gameStart] Starting countdown: ${initial}s`);
       startCountdown(initial);
       clearEndTimer();
       endTimer = null;
@@ -498,6 +530,15 @@ export function attachClientGame(socket, container, opts = {}) {
     } catch (e) {
       console.error("Error handling gameStart:", e, payload);
     }
+  }
+
+  // ✅ If gameStart data was passed via opts, initialize immediately
+  if (opts.gameStartData) {
+    initFromGameStart(opts.gameStartData);
+  }
+
+  safeOn("gameStart", (payload) => {
+    initFromGameStart(payload);
   });
 
   safeOn("tickSnapshot", (snap) => {
@@ -600,7 +641,18 @@ export function attachClientGame(socket, container, opts = {}) {
       players = players.map((pl) => {
         if (pl.id === p.id || pl.pseudo === p.pseudo) {
           found = true;
-          return { ...pl, id: p.id, x: p.x, y: p.y };
+          return {
+            ...pl,
+            id: p.id,
+            x: p.x,
+            y: p.y,
+            lives: p.lives !== undefined ? p.lives : pl.lives,
+            dead: p.dead !== undefined ? p.dead : pl.dead,
+            invincibleUntil:
+              p.invincibleUntil !== undefined
+                ? p.invincibleUntil
+                : pl.invincibleUntil,
+          };
         }
         return pl;
       });
@@ -671,7 +723,6 @@ export function attachClientGame(socket, container, opts = {}) {
 
         // Remove block destruction animations after they finish
         setTimeout(() => {
-          const bombId = msg.bomb.id;
           const blockPositions = new Set(
             msg.destroyedBlocks.map((b) => `${b.x},${b.y}`),
           );
@@ -700,6 +751,58 @@ export function attachClientGame(socket, container, opts = {}) {
       map = msg.map;
     } catch (e) {
       console.error("mapUpdate handler error", e, msg);
+    }
+  });
+
+  // ✅ Player hit handler — update lives & invincibility
+  safeOn("playerHit", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Player hit:", msg.playerId, "lives:", msg.lives);
+      players = players.map((p) => {
+        if (p.id === msg.playerId) {
+          return {
+            ...p,
+            lives: msg.lives,
+            invincibleUntil: msg.invincibleUntil,
+          };
+        }
+        return p;
+      });
+    } catch (e) {
+      console.error("playerHit handler error", e, msg);
+    }
+  });
+
+  // ✅ Player death handler
+  safeOn("playerDeath", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Player died:", msg.playerId, msg.pseudo);
+      players = players.map((p) => {
+        if (p.id === msg.playerId) {
+          return { ...p, dead: true, lives: 0 };
+        }
+        return p;
+      });
+    } catch (e) {
+      console.error("playerDeath handler error", e, msg);
+    }
+  });
+
+  // ✅ Game win handler
+  safeOn("gameWin", (msg) => {
+    try {
+      if (!msg) return;
+      console.log("[client] Game won by:", msg.winnerPseudo || "nobody");
+      gameWinner = {
+        id: msg.winnerId,
+        pseudo: msg.winnerPseudo,
+      };
+      clearCountdown();
+      if (endTimer == null) startEndTimer();
+    } catch (e) {
+      console.error("gameWin handler error", e, msg);
     }
   });
 
@@ -768,10 +871,23 @@ export function attachClientGame(socket, container, opts = {}) {
         endTimer,
         fps,
         players,
+        gameWinner,
+        localPlayerId,
       });
 
       try {
-        render({ tag: "div", children: [gameVNode, hudVNode] }, container, {});
+        render(
+          {
+            tag: "div",
+            attrs: {
+              style:
+                "display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding-top:60px;padding-bottom:40px;box-sizing:border-box;",
+            },
+            children: [gameVNode, hudVNode],
+          },
+          container,
+          {},
+        );
       } catch (e) {
         console.error("render failed:", e, { map, players });
       }
@@ -780,9 +896,12 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   }
 
+  let _stopped = false; // ✅ Flag to break out of the render loop
+
   attachInputListeners();
 
   (function loop() {
+    if (_stopped) return; // ✅ Stop the render loop when game is stopped
     try {
       renderState();
     } catch (e) {}
@@ -791,15 +910,18 @@ export function attachClientGame(socket, container, opts = {}) {
 
   return {
     stop() {
+      _stopped = true; // ✅ Break the render loop
       try {
         clearCountdown();
         clearEndTimer();
         bombs = [];
         explosions = [];
         destroyingBlocks = [];
+        gameWinner = null;
       } catch (e) {}
       started = false;
       detachInputListeners();
+      removeAllSocketHandlers(); // ✅ Clean up all socket event handlers
     },
   };
 }

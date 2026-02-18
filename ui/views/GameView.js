@@ -313,7 +313,9 @@ export function GameView(options) {
 
   // ✅ Players — original simple pattern restored
   const playersWithPos = (players || []).map((p) => ({ ...p }));
-  const playerNodes = playersWithPos.map((p) => {
+  const playerNodes = playersWithPos
+    .filter((p) => !p.dead) // ✅ Don't render dead players
+    .map((p) => {
     const colorIdx = typeof p.color === "number" ? p.color : 0;
     const spriteRow =
       (SPRITE_ROWS && SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].row) || 0;
@@ -364,9 +366,19 @@ export function GameView(options) {
     const wrapperLeft = Math.round(p.x * displayedCell);
     const wrapperTop = Math.round(p.y * displayedCell);
 
+    // ✅ Invincibility flashing effect
+    const now = Date.now();
+    const isInvincible = p.invincibleUntil && now < p.invincibleUntil;
+    let invincibilityStyle = "";
+    if (isInvincible) {
+      // Flash every 100ms using timestamp modulo
+      const flashOn = Math.floor(now / 100) % 2 === 0;
+      invincibilityStyle = `opacity: ${flashOn ? 1 : 0.25};`;
+    }
+
     const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:hidden; ${
       shouldMirror ? "transform: scaleX(-1);" : ""
-    }`;
+    } ${invincibilityStyle}`;
 
     const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
 

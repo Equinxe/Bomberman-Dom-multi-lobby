@@ -183,6 +183,8 @@ function attachSocketHandlers() {
   socket.on("gameStart", (data) => {
     try {
       stopGameIfRunning();
+      // ✅ Hide lobby countdown overlay
+      hideLobbyCountdown(true);
       // ✅ Force larger tiles (32x32) to zoom the tileset, playerScale=1.2 keeps sprite slightly larger
       gameApi = attachClientGame(socket, container, {
         cellSize: 32, // Taille d'affichage des cellules (zoom x2)
@@ -195,6 +197,7 @@ function attachSocketHandlers() {
         inputEnabled: true,
         tilesetUrl: "./assets/images/TileSets.png", // ✅ Chemin du tileset
         playerSpriteUrl: "./assets/images/Players.png", // ✅ Chemin des sprites joueurs
+        gameStartData: data, // ✅ Pass gameStart payload so client can initialize immediately
       });
 
       if (data && data.localPseudo) {
