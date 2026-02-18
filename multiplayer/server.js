@@ -291,26 +291,29 @@ function ensureLobby(code) {
           },
         );
 
+        // ✅ Helper: broadcast with automatic return-to-lobby on gameWin
+        function broadcastWithWinCheck(type, payload) {
+          broadcast(code, { type, ...payload });
+          if (type === "gameWin" && !lobby._returnToLobbyScheduled) {
+            lobby._returnToLobbyScheduled = true;
+            console.log(
+              `[lobby ${code}] Game won — returning to lobby in 5s`,
+            );
+            setTimeout(() => {
+              lobby._returnToLobbyScheduled = false;
+              exitToLobby(code);
+            }, 5000);
+          }
+        }
+        // Store it on lobby so the detonate handler can use it
+        lobby._broadcastWithWinCheck = broadcastWithWinCheck;
+
         // ✅ Start bomb check interval
         if (lobby.bombCheckInterval) {
           clearInterval(lobby.bombCheckInterval);
         }
         lobby.bombCheckInterval = setInterval(() => {
-          checkBombExplosions(lobby, (type, payload) => {
-            broadcast(code, { type, ...payload });
-
-            // ✅ When a winner is declared, schedule return to lobby after 5s
-            if (type === "gameWin" && !lobby._returnToLobbyScheduled) {
-              lobby._returnToLobbyScheduled = true;
-              console.log(
-                `[lobby ${code}] Game won — returning to lobby in 5s`,
-              );
-              setTimeout(() => {
-                lobby._returnToLobbyScheduled = false;
-                exitToLobby(code);
-              }, 5000);
-            }
-          });
+          checkBombExplosions(lobby, broadcastWithWinCheck);
         }, 100); // Check every 100ms
 
         // ✅ Start server-side game timer (5 minutes = 300s)
@@ -868,10 +871,9 @@ wss.on("connection", (ws) => {
             });
           }
         } else if (payload.action === "detonate") {
-          // ✅ Handle detonator power-up action
-          detonateBombs(lobby, player, (type, payload) => {
-            broadcast(code, { type, ...payload });
-          });
+          // ✅ Handle detonator power-up action (uses shared win-check broadcast)
+          const winCheckBroadcast = lobby._broadcastWithWinCheck || ((type, p) => broadcast(code, { type, ...p }));
+          detonateBombs(lobby, player, winCheckBroadcast);
         } else {
           // Other actions
           broadcast(code, {
