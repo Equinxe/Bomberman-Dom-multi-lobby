@@ -125,7 +125,53 @@ export function HUD({
     ],
   });
 
-  // ========== BOTTOM HUD BAR ==========
+  // ========== BOTTOM HUD BAR (power-ups + stats) ==========
+  // Find local player for power-up display
+  const localPlayer = players.find((p) => p.id === localPlayerId) || {};
+  const pMaxBombs = localPlayer.maxBombs || 1;
+  const pBombRange = localPlayer.bombRange || 3;
+  const pSpeed = localPlayer.speed || 4;
+  const pWallpass = !!localPlayer.wallpass;
+  const pDetonator = !!localPlayer.detonator;
+
+  const powerUpIcons = [
+    {
+      emoji: "💣",
+      value: pMaxBombs,
+      label: "BOMB",
+      highlight: pMaxBombs > 1,
+      max: 8,
+    },
+    {
+      emoji: "🔥",
+      value: pBombRange,
+      label: "FIRE",
+      highlight: pBombRange > 3,
+      max: 10,
+    },
+    {
+      emoji: "⚡",
+      value: pSpeed.toFixed ? pSpeed.toFixed(1) : pSpeed,
+      label: "SPD",
+      highlight: pSpeed > 4,
+      max: 8,
+    },
+    {
+      emoji: "👻",
+      value: pWallpass ? "ON" : "—",
+      label: "WALL",
+      highlight: pWallpass,
+      isBool: true,
+    },
+    {
+      emoji: "🎯",
+      value: pDetonator ? "ON" : "—",
+      label: "DET [E]",
+      highlight: pDetonator,
+      isBool: true,
+    },
+  ];
+
   children.push({
     tag: "div",
     attrs: {
@@ -133,7 +179,7 @@ export function HUD({
       style: `
         position: fixed;
         bottom: 0; left: 0; right: 0;
-        height: 36px;
+        height: 40px;
         background: linear-gradient(0deg, rgba(16,16,32,0.92) 0%, rgba(16,16,32,0.8) 80%, transparent 100%);
         border-top: 1px solid rgba(59,230,170,0.25);
         display: flex;
@@ -160,20 +206,62 @@ export function HUD({
           `,
         },
         children: [
-          // Left: Score
+          // Left: Power-up icons
+          {
+            tag: "div",
+            attrs: { style: "display:flex; gap:8px; align-items:center;" },
+            children: powerUpIcons.map((pu) => ({
+              tag: "div",
+              attrs: {
+                style: `
+                  display: flex;
+                  align-items: center;
+                  gap: 4px;
+                  padding: 3px 6px;
+                  border-radius: 4px;
+                  background: ${pu.highlight ? "rgba(59,230,170,0.18)" : "rgba(0,0,0,0.3)"};
+                  border: 1px solid ${pu.highlight ? "rgba(59,230,170,0.55)" : "rgba(255,255,255,0.06)"};
+                  ${pu.highlight ? "text-shadow: 0 0 6px #3be6aa88;" : ""}
+                `,
+              },
+              children: [
+                {
+                  tag: "span",
+                  attrs: { style: "font-size:11px;" },
+                  children: [pu.emoji],
+                },
+                {
+                  tag: "div",
+                  attrs: {
+                    style:
+                      "display:flex; flex-direction:column; gap:0; line-height:1;",
+                  },
+                  children: [
+                    {
+                      tag: "span",
+                      attrs: {
+                        style: `font-size:6px; color:${pu.highlight ? "#3be6aa" : "#445"}; letter-spacing:0.5px;`,
+                      },
+                      children: [pu.label],
+                    },
+                    {
+                      tag: "span",
+                      attrs: {
+                        style: `font-size:9px; color:${pu.highlight ? "#fff" : "#556"}; font-weight:bold;`,
+                      },
+                      children: [String(pu.value)],
+                    },
+                  ],
+                },
+              ],
+            })),
+          },
+          // Center: Score
           {
             tag: "span",
             children: [`SC ${score}`],
           },
-          // Center: End timer (elapsed) or game state
-          {
-            tag: "span",
-            attrs: {
-              style: `color: ${endTimer != null ? "#ffaa33" : "#556"};`,
-            },
-            children: [endTimer != null ? `ELAPSED ${fmt(endTimer)}` : ""],
-          },
-          // Right: FPS + HI
+          // Right: FPS
           {
             tag: "div",
             attrs: { style: "display:flex; gap:12px;" },
@@ -194,61 +282,8 @@ export function HUD({
   });
 
   // ========== WIN/DEATH OVERLAY ==========
-  if (gameWinner) {
-    const isLocalWinner = gameWinner.id === localPlayerId;
-    children.push({
-      tag: "div",
-      attrs: {
-        id: "game-over-overlay",
-        style: `
-          position: fixed;
-          top: 0; left: 0; right: 0; bottom: 0;
-          z-index: 11000;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(0,0,0,0.65);
-          pointer-events: none;
-          font-family: 'Press Start 2P', monospace;
-        `,
-      },
-      children: [
-        {
-          tag: "div",
-          attrs: {
-            style: `
-              text-align: center;
-              padding: 32px 48px;
-              border-radius: 16px;
-              background: linear-gradient(135deg, rgba(16,32,24,0.95) 0%, rgba(32,48,36,0.95) 100%);
-              border: 3px solid ${isLocalWinner ? "#3be6aa" : "#ff5555"};
-              box-shadow: 0 0 40px ${isLocalWinner ? "rgba(59,230,170,0.5)" : "rgba(255,85,85,0.4)"};
-            `,
-          },
-          children: [
-            {
-              tag: "div",
-              attrs: {
-                style: `font-size: 24px; color: ${isLocalWinner ? "#3be6aa" : "#ff5555"}; margin-bottom: 12px; text-shadow: 0 0 20px ${isLocalWinner ? "#3be6aa88" : "#ff555588"};`,
-              },
-              children: [isLocalWinner ? "🏆 VICTORY! 🏆" : "GAME OVER"],
-            },
-            {
-              tag: "div",
-              attrs: {
-                style: "font-size: 14px; color: #cfeedd;",
-              },
-              children: [
-                gameWinner.pseudo
-                  ? `${gameWinner.pseudo} wins!`
-                  : "Draw — no winner!",
-              ],
-            },
-          ],
-        },
-      ],
-    });
-  }
+  // Win overlay is handled as a persistent DOM element in game-client.js (showWinOverlay)
+  // to avoid flashing caused by the render loop rebuilding the DOM every frame.
 
   return {
     tag: "div",

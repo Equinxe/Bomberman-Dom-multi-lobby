@@ -98,3 +98,114 @@ export function getTransparentSpriteBgUrl(originalUrl) {
 export function preloadPlayerSprites(url = "./assets/images/Players.png") {
   getTransparentSpriteUrl(url);
 }
+
+/**
+ * Process PowerUps.png: removes magenta bg + blue backgrounds specific to power-up sprites.
+ * PowerUps.png layout (pixel-verified):
+ *   - Magenta (255,0,255) sheet background/margin
+ *   - Col 0 light blue border (66,162,231)
+ *   - Col 0 inner blue fill (99,130,231)
+ *   - Col 1 dark blue border (66,0,132)
+ *   - Col 1 dark inner (33,32,66)
+ * All must become transparent so only the actual sprite art remains.
+ */
+export function getTransparentPowerUpUrl(originalUrl) {
+  const cacheKey = "_powerup_" + originalUrl;
+  if (_spriteCache[cacheKey]) {
+    return _spriteCache[cacheKey];
+  }
+  if (typeof document === "undefined") return originalUrl;
+
+  if (!_spriteCache["_loading_" + cacheKey]) {
+    _spriteCache["_loading_" + cacheKey] = true;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i],
+            g = d[i + 1],
+            b = d[i + 2];
+
+          // Magenta background (255,0,255) with tolerance
+          if (r >= 240 && g <= 15 && b >= 240) {
+            d[i + 3] = 0;
+            continue;
+          }
+          // Light blue border (66,162,231) with tolerance
+          if (
+            Math.abs(r - 66) <= 10 &&
+            Math.abs(g - 162) <= 10 &&
+            Math.abs(b - 231) <= 10
+          ) {
+            d[i + 3] = 0;
+            continue;
+          }
+          // Inner blue fill (99,130,231) with tolerance
+          if (
+            Math.abs(r - 99) <= 10 &&
+            Math.abs(g - 130) <= 10 &&
+            Math.abs(b - 231) <= 10
+          ) {
+            d[i + 3] = 0;
+            continue;
+          }
+          // Dark blue border col 1 (66,0,132) with tolerance
+          if (Math.abs(r - 66) <= 10 && g <= 10 && Math.abs(b - 132) <= 10) {
+            d[i + 3] = 0;
+            continue;
+          }
+          // Dark inner col 1 (33,32,66) with tolerance
+          if (
+            Math.abs(r - 33) <= 10 &&
+            Math.abs(g - 32) <= 10 &&
+            Math.abs(b - 66) <= 10
+          ) {
+            d[i + 3] = 0;
+            continue;
+          }
+          // Dark inner variant (99,0,66) with tolerance — appears in some sprites
+          if (Math.abs(r - 99) <= 10 && g <= 10 && Math.abs(b - 66) <= 10) {
+            d[i + 3] = 0;
+            continue;
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        const dataUrl = canvas.toDataURL("image/png");
+        _spriteCache[cacheKey] = dataUrl;
+        console.log(
+          "✅ PowerUps sprite processed: magenta+blue backgrounds removed (" +
+            img.width +
+            "x" +
+            img.height +
+            ")",
+        );
+      } catch (e) {
+        console.warn("Failed to process PowerUps sprite sheet:", e);
+        _spriteCache[cacheKey] = originalUrl;
+      }
+    };
+    img.onerror = () => {
+      _spriteCache[cacheKey] = originalUrl;
+    };
+    img.src = originalUrl;
+  }
+
+  return _spriteCache[cacheKey] || originalUrl;
+}
+
+/**
+ * Preload and process the PowerUps sprite sheet immediately.
+ */
+export function preloadPowerUpSprites(url = "./assets/images/PowerUps.png") {
+  getTransparentPowerUpUrl(url);
+}

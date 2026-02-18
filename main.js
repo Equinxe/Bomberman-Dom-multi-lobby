@@ -10,12 +10,16 @@ import { setState, getState } from "./Core/state.js";
 import { registerEvent, getEventsMap } from "./Core/events.js";
 import { socket } from "./multiplayer/socket.js";
 import { attachClientGame } from "./client/game-client.js";
-import { preloadPlayerSprites } from "./ui/helpers/sprite-loader.js";
+import {
+  preloadPlayerSprites,
+  preloadPowerUpSprites,
+} from "./ui/helpers/sprite-loader.js";
 
 window.createElement = createElement;
 
-// ✅ Start preprocessing player sprites immediately (removes blue background)
+// ✅ Start preprocessing sprites immediately (removes blue/magenta backgrounds)
 preloadPlayerSprites();
+preloadPowerUpSprites();
 
 let lobbyState = { players: [], chat: [], queue: [], code: "" };
 const container = document.getElementById("app");
@@ -26,21 +30,23 @@ let lastErrorPopup = null;
 let gameApi = null;
 
 function withPreservedChatDraft(renderFn) {
+  let draft = "";
   try {
     const draftEl = document.getElementById("chat-draft");
-    const draft = draftEl ? draftEl.value : "";
-    renderFn();
-    if (draftEl) {
+    if (draftEl) draft = draftEl.value || "";
+  } catch (e) {}
+  renderFn();
+  if (draft) {
+    try {
       const newDraftEl = document.getElementById("chat-draft");
       if (newDraftEl) newDraftEl.value = draft;
-    }
-  } catch (e) {
-    try {
-      renderFn();
-    } catch (err) {
-      console.error("withPreservedChatDraft renderFn error", err);
-    }
+    } catch (e) {}
   }
+  // ✅ Auto-scroll chat to bottom after render
+  try {
+    const chatList = document.querySelector("[data-chat-list]");
+    if (chatList) chatList.scrollTop = chatList.scrollHeight;
+  } catch (e) {}
 }
 
 function showNicknameForm() {
@@ -105,8 +111,9 @@ function showPopupError(message) {
 }
 
 function stopGameIfRunning() {
+  if (!gameApi) return; // ✅ Only wipe DOM when actually stopping a game
   try {
-    if (gameApi && typeof gameApi.stop === "function") {
+    if (typeof gameApi.stop === "function") {
       gameApi.stop();
     }
   } catch (e) {
@@ -114,6 +121,15 @@ function stopGameIfRunning() {
   } finally {
     gameApi = null;
   }
+  // ✅ Force a full DOM wipe so the lobby gets a clean container
+  // (the game vnode tree is completely different from the lobby tree,
+  //  and leftover _vnode refs can confuse the patcher)
+  try {
+    if (container) {
+      container.innerHTML = "";
+      if (container.firstChild) container.firstChild._vnode = undefined;
+    }
+  } catch (e) {}
 }
 
 function attachSocketHandlers() {
@@ -133,6 +149,10 @@ function attachSocketHandlers() {
   });
 
   socket.on("lobby", (data) => {
+    console.log(
+      "[main.js] Received lobby event, stopping game and showing lobby",
+      data?.code,
+    );
     stopGameIfRunning();
     handleLobbyUpdate(
       data.players || [],

@@ -155,3 +155,33 @@ body::-webkit-scrollbar-thumb {
   image-rendering: pixelated;
   display: inline-block;
 }
+
+/* ====== GAME HUD & POWER-UP STYLES ====== */
+@keyframes hudPulse {
+  0%   { opacity: 0.85; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.85; }
+}
+
+@keyframes invincibleFlash {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.2; }
+  100% { opacity: 1; }
+}
+
+/* Game map container */
+#game-map-root {
+  border-radius: 6px;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.5), 0 0 0 2px rgba(59,230,170,0.2);
+}
+
+/* HUD bars */
+#hud-top, #hud-bottom {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* Win overlay entrance */
+#game-over-overlay > div {
+  animation: panelPop 0.4s ease-out;
+}

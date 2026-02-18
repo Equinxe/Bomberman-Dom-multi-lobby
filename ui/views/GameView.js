@@ -11,6 +11,8 @@ import {
   PLAYER_ANIMATIONS,
   BOMB_SPRITE,
   EXPLOSION_SPRITES,
+  POWERUP_SPRITE,
+  POWERUP_TYPES,
 } from "./../helpers/constants.js";
 import {
   isSolidCell,
@@ -23,7 +25,10 @@ import {
   imgStyleForBombSprite,
   ensureTilesetInfo,
 } from "./../helpers/tiles.js";
-import { getTransparentSpriteUrl } from "./../helpers/sprite-loader.js";
+import {
+  getTransparentSpriteUrl,
+  getTransparentPowerUpUrl,
+} from "./../helpers/sprite-loader.js";
 
 export function GameView(options) {
   const {
@@ -32,10 +37,13 @@ export function GameView(options) {
     bombs = [],
     explosions = [],
     destroyingBlocks = [],
+    powerUps = [],
+    pickupFlashes = [],
     cellSize = 24,
     mapScale = 1.6,
     tilesetUrl = "./assets/images/TileSets.png",
     playerSpriteUrl = "./assets/images/Players.png",
+    powerUpSpriteUrl = "./assets/images/PowerUps.png",
     tileSrcSize = 16,
     tileSpacing = 1,
     tilesPerRow: tilesPerRowOpt = undefined,
@@ -311,6 +319,101 @@ export function GameView(options) {
     });
   }
 
+  // ✅ Render power-ups on the map
+  const powerUpNodes = [];
+  if (powerUps && Array.isArray(powerUps)) {
+    const puSpriteSize = POWERUP_SPRITE.spriteSize; // 16
+    const puSheetW = POWERUP_SPRITE.sheetWidth; // 112
+    const puSheetH = POWERUP_SPRITE.sheetHeight; // 160
+
+    // ✅ Use processed sprite URL with blue bg removed
+    const processedPowerUpUrl = getTransparentPowerUpUrl(powerUpSpriteUrl);
+
+    powerUps.forEach((pu) => {
+      const puConfig = POWERUP_TYPES[pu.type];
+      if (!puConfig) return;
+
+      const puLeft = Math.round(pu.x * displayedCell);
+      const puTop = Math.round(pu.y * displayedCell);
+
+      // Use pixel-verified srcX/srcY from POWERUP_TYPES
+      const srcX = puConfig.srcX;
+      const srcY = puConfig.srcY;
+
+      // Scale the sprite to fill the cell
+      const zoom = displayedCell / puSpriteSize;
+      const imgW = Math.round(puSheetW * zoom);
+      const imgH = Math.round(puSheetH * zoom);
+      const offX = -Math.round(srcX * zoom);
+      const offY = -Math.round(srcY * zoom);
+
+      // Floating animation using CSS
+      const floatPhase = (Date.now() % 1500) / 1500;
+      const floatY = Math.sin(floatPhase * Math.PI * 2) * 2;
+
+      // Glow color per type
+      const glowColors = {
+        bombs: "rgba(255,180,50,0.6)",
+        flames: "rgba(255,80,30,0.6)",
+        speed: "rgba(50,180,255,0.6)",
+        wallpass: "rgba(160,100,255,0.6)",
+        detonator: "rgba(255,50,50,0.6)",
+      };
+      const glowColor = glowColors[pu.type] || "rgba(255,255,255,0.4)";
+
+      const puStyle = `position:absolute; left:${puLeft}px; top:${Math.round(puTop + floatY)}px; width:${displayedCell}px; height:${displayedCell}px; overflow:hidden; z-index:45; image-rendering:pixelated; filter: drop-shadow(0 0 6px ${glowColor}) drop-shadow(0 2px 4px rgba(0,0,0,0.5));`;
+
+      const puImgStyle = `position:relative; left:${offX}px; top:${offY}px; width:${imgW}px; height:${imgH}px; image-rendering:pixelated; display:block; pointer-events:none;`;
+
+      powerUpNodes.push({
+        tag: "div",
+        attrs: { style: puStyle, "data-powerup-id": pu.id },
+        children: [
+          {
+            tag: "img",
+            attrs: {
+              src: processedPowerUpUrl,
+              style: puImgStyle,
+              draggable: "false",
+              alt: puConfig.name,
+            },
+          },
+        ],
+      });
+    });
+  }
+
+  // ✅ Render pickup flash effects
+  const pickupFlashNodes = [];
+  if (pickupFlashes && Array.isArray(pickupFlashes)) {
+    const flashEmojis = {
+      bombs: "💣",
+      flames: "🔥",
+      speed: "⚡",
+      wallpass: "👻",
+      detonator: "🎯",
+    };
+    pickupFlashes.forEach((flash) => {
+      const now = Date.now();
+      const elapsed = now - flash.startTime;
+      const progress = Math.min(1, elapsed / flash.duration);
+      const opacity = 1 - progress;
+      const scale = 1 + progress * 0.8;
+      const yOffset = -progress * displayedCell * 0.6;
+
+      const fLeft = Math.round(flash.x * displayedCell + displayedCell * 0.15);
+      const fTop = Math.round(flash.y * displayedCell + yOffset);
+
+      pickupFlashNodes.push({
+        tag: "div",
+        attrs: {
+          style: `position:absolute; left:${fLeft}px; top:${fTop}px; width:${Math.round(displayedCell * 0.7)}px; height:${Math.round(displayedCell * 0.7)}px; z-index:65; pointer-events:none; display:flex; align-items:center; justify-content:center; opacity:${opacity}; transform:scale(${scale}); font-size:${Math.round(displayedCell * 0.5)}px; text-shadow: 0 0 8px rgba(255,255,255,0.8);`,
+        },
+        children: [flashEmojis[flash.type] || "✨"],
+      });
+    });
+  }
+
   // ✅ Players — original simple pattern restored
   const playersWithPos = (players || []).map((p) => ({ ...p }));
   const playerNodes = playersWithPos
@@ -379,11 +482,20 @@ export function GameView(options) {
         invincibilityStyle = `opacity: ${flashOn ? 1 : 0.25};`;
       }
 
-      const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:hidden; ${
+      const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:visible; ${
         shouldMirror ? "transform: scaleX(-1);" : ""
       } ${invincibilityStyle}`;
 
       const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
+
+      // ✅ Player name tag above sprite
+      const nameTag = {
+        tag: "div",
+        attrs: {
+          style: `position:absolute; top:${-Math.round(displayedCell * 0.35)}px; left:50%; transform:translateX(-50%)${shouldMirror ? " scaleX(-1)" : ""}; font-family:'Press Start 2P',monospace; font-size:${Math.max(6, Math.round(displayedCell * 0.2))}px; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.5); white-space:nowrap; pointer-events:none; text-align:center; letter-spacing:0.5px;`,
+        },
+        children: [(p.pseudo || "").slice(0, 6)],
+      };
 
       return {
         tag: "div",
@@ -392,14 +504,23 @@ export function GameView(options) {
           "data-player-id": p.id || "",
         },
         children: [
+          nameTag,
           {
-            tag: "img",
+            tag: "div",
             attrs: {
-              src: processedPlayerSpriteUrl,
-              style: innerStyle,
-              draggable: "false",
-              alt: "",
+              style: `overflow:hidden; width:${targetPx}px; height:${targetPx}px;`,
             },
+            children: [
+              {
+                tag: "img",
+                attrs: {
+                  src: processedPlayerSpriteUrl,
+                  style: innerStyle,
+                  draggable: "false",
+                  alt: "",
+                },
+              },
+            ],
           },
         ],
       };
@@ -415,9 +536,11 @@ export function GameView(options) {
     children: [
       ...tileNodes, // z-index: 1
       ...blockDestroyNodes, // z-index: 45 (block breaking animation)
+      ...powerUpNodes, // z-index: 45 (power-ups on floor)
       ...bombNodes, // z-index: 50
       ...explosionNodes, // z-index: 55
       ...playerNodes, // z-index: 60
+      ...pickupFlashNodes, // z-index: 65 (pickup visual effect)
     ],
   };
 }

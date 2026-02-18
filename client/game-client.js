@@ -21,6 +21,8 @@ export function attachClientGame(socket, container, opts = {}) {
   let bombs = []; // ✅ Bombs array
   let explosions = []; // ✅ Explosions array
   let destroyingBlocks = []; // ✅ Block destruction animations
+  let powerUps = []; // ✅ Power-ups on the map
+  let pickupFlashes = []; // ✅ Visual flash when picking up power-ups
   let fps = 60;
   let lastTs =
     typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -399,6 +401,9 @@ export function attachClientGame(socket, container, opts = {}) {
       sendInputToServer({ type: "move", dir: "down", active: true });
     } else if (key === " " || key === "x") {
       sendInputToServer({ type: "action", action: "placeBomb" });
+    } else if (key === "e" || key === "r") {
+      // ✅ Detonator: detonate all player's bombs
+      sendInputToServer({ type: "action", action: "detonate" });
     }
     if (changed) ev.preventDefault();
   }
@@ -505,6 +510,8 @@ export function attachClientGame(socket, container, opts = {}) {
       bombs = [];
       explosions = [];
       destroyingBlocks = [];
+      powerUps = [];
+      pickupFlashes = [];
       gameWinner = null;
 
       score = 0;
@@ -652,6 +659,11 @@ export function attachClientGame(socket, container, opts = {}) {
               p.invincibleUntil !== undefined
                 ? p.invincibleUntil
                 : pl.invincibleUntil,
+            maxBombs: p.maxBombs !== undefined ? p.maxBombs : pl.maxBombs,
+            bombRange: p.bombRange !== undefined ? p.bombRange : pl.bombRange,
+            speed: p.speed !== undefined ? p.speed : pl.speed,
+            wallpass: p.wallpass !== undefined ? p.wallpass : pl.wallpass,
+            detonator: p.detonator !== undefined ? p.detonator : pl.detonator,
           };
         }
         return pl;
@@ -754,6 +766,88 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   });
 
+  // ✅ Power-up spawned handler
+  safeOn("powerUpSpawned", (msg) => {
+    try {
+      if (!msg || !Array.isArray(msg.powerUps)) return;
+      console.log("[client] Power-ups spawned:", msg.powerUps);
+      msg.powerUps.forEach((pu) => {
+        // Avoid duplicates
+        if (!powerUps.find((p) => p.id === pu.id)) {
+          powerUps.push(pu);
+        }
+      });
+    } catch (e) {
+      console.error("powerUpSpawned handler error", e, msg);
+    }
+  });
+
+  // ✅ Power-up collected handler
+  safeOn("powerUpCollected", (msg) => {
+    try {
+      if (!msg) return;
+      console.log(
+        "[client] Power-up collected:",
+        msg.puType,
+        "by",
+        msg.playerId,
+      );
+
+      // Find the power-up position for the flash effect before removing it
+      const collected = powerUps.find((pu) => pu.id === msg.powerUpId);
+
+      // Remove from map immediately
+      powerUps = powerUps.filter((pu) => pu.id !== msg.powerUpId);
+
+      // ✅ Spawn a visual pickup flash at the collection position
+      if (collected && typeof document !== "undefined") {
+        const flashId = `flash-${collected.id}`;
+        pickupFlashes.push({
+          id: flashId,
+          x: collected.x,
+          y: collected.y,
+          type: msg.puType,
+          startTime: Date.now(),
+          duration: 400,
+        });
+        setTimeout(() => {
+          pickupFlashes = pickupFlashes.filter((f) => f.id !== flashId);
+        }, 450);
+      }
+
+      // Update player stats
+      if (msg.playerStats) {
+        players = players.map((p) => {
+          if (p.id === msg.playerId) {
+            return {
+              ...p,
+              maxBombs: msg.playerStats.maxBombs,
+              bombRange: msg.playerStats.bombRange,
+              speed: msg.playerStats.speed,
+              wallpass: msg.playerStats.wallpass,
+              detonator: msg.playerStats.detonator,
+            };
+          }
+          return p;
+        });
+      }
+    } catch (e) {
+      console.error("powerUpCollected handler error", e, msg);
+    }
+  });
+
+  // ✅ Power-up destroyed by explosion handler
+  safeOn("powerUpDestroyed", (msg) => {
+    try {
+      if (!msg || !Array.isArray(msg.powerUpIds)) return;
+      console.log("[client] Power-ups destroyed:", msg.powerUpIds);
+      const destroyedSet = new Set(msg.powerUpIds);
+      powerUps = powerUps.filter((pu) => !destroyedSet.has(pu.id));
+    } catch (e) {
+      console.error("powerUpDestroyed handler error", e, msg);
+    }
+  });
+
   // ✅ Player hit handler — update lives & invincibility
   safeOn("playerHit", (msg) => {
     try {
@@ -790,7 +884,80 @@ export function attachClientGame(socket, container, opts = {}) {
     }
   });
 
-  // ✅ Game win handler
+  // ✅ Game win handler — creates a persistent overlay (not in the render loop)
+  let _winOverlayEl = null;
+  function showWinOverlay(winner) {
+    removeWinOverlay();
+    const isLocalWinner = winner.id === localPlayerId;
+    const borderColor = isLocalWinner ? "#3be6aa" : "#ff5555";
+    const glowColor = isLocalWinner
+      ? "rgba(59,230,170,0.5)"
+      : "rgba(255,85,85,0.4)";
+    const textColor = isLocalWinner ? "#3be6aa" : "#ff5555";
+    const titleText = isLocalWinner
+      ? "\uD83C\uDFC6 VICTORY! \uD83C\uDFC6"
+      : "GAME OVER";
+    const subText = winner.pseudo
+      ? `${winner.pseudo} wins!`
+      : "Draw \u2014 no winner!";
+
+    const overlay = document.createElement("div");
+    overlay.id = "game-win-overlay";
+    overlay.style.cssText = `
+      position:fixed; top:0; left:0; right:0; bottom:0;
+      z-index:11000; display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,0); pointer-events:none;
+      font-family:'Press Start 2P',monospace;
+      transition: background 0.5s ease;
+    `;
+    overlay.innerHTML = `
+      <div style="
+        text-align:center; padding:32px 48px; border-radius:16px;
+        background:linear-gradient(135deg,rgba(16,32,24,0.95) 0%,rgba(32,48,36,0.95) 100%);
+        border:3px solid ${borderColor};
+        box-shadow:0 0 40px ${glowColor};
+        transform:scale(0.8); opacity:0;
+        transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.4s ease;
+      ">
+        <div style="font-size:24px; color:${textColor}; margin-bottom:12px; text-shadow:0 0 20px ${textColor}88;">
+          ${titleText}
+        </div>
+        <div style="font-size:14px; color:#cfeedd;">
+          ${subText}
+        </div>
+        <div style="font-size:8px; color:#8fc; margin-top:12px; opacity:0.7;">
+          Returning to lobby...
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    _winOverlayEl = overlay;
+
+    // Animate in after a frame (double rAF for reliable CSS transition trigger)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!_winOverlayEl || _winOverlayEl !== overlay) return; // already removed
+        overlay.style.background = "rgba(0,0,0,0.65)";
+        overlay.style.pointerEvents = "auto";
+        const box = overlay.querySelector("div");
+        if (box) {
+          box.style.transform = "scale(1)";
+          box.style.opacity = "1";
+        }
+      });
+    });
+  }
+
+  function removeWinOverlay() {
+    if (_winOverlayEl) {
+      _winOverlayEl.remove();
+      _winOverlayEl = null;
+    }
+    // Also remove any stale overlays
+    const old = document.getElementById("game-win-overlay");
+    if (old) old.remove();
+  }
+
   safeOn("gameWin", (msg) => {
     try {
       if (!msg) return;
@@ -801,6 +968,8 @@ export function attachClientGame(socket, container, opts = {}) {
       };
       clearCountdown();
       if (endTimer == null) startEndTimer();
+      // Show persistent overlay
+      showWinOverlay(gameWinner);
     } catch (e) {
       console.error("gameWin handler error", e, msg);
     }
@@ -852,10 +1021,13 @@ export function attachClientGame(socket, container, opts = {}) {
         bombs, // ✅ Pass bombs
         explosions, // ✅ Pass explosions
         destroyingBlocks, // ✅ Pass block destruction animations
+        powerUps, // ✅ Pass power-ups
+        pickupFlashes, // ✅ Pass pickup flash effects
         cellSize,
         playerScale,
         tilesetUrl: opts.tilesetUrl || "./assets/images/TileSets.png",
         playerSpriteUrl: opts.playerSpriteUrl || "./assets/images/Players.png",
+        powerUpSpriteUrl: "./assets/images/PowerUps.png",
         tileSrcSize,
         tilesPerRow: opts.tilesPerRow || tilesPerRow,
         debug: !!opts.debug,
@@ -914,9 +1086,12 @@ export function attachClientGame(socket, container, opts = {}) {
       try {
         clearCountdown();
         clearEndTimer();
+        removeWinOverlay(); // ✅ Remove persistent win overlay from document.body
         bombs = [];
         explosions = [];
         destroyingBlocks = [];
+        powerUps = [];
+        pickupFlashes = [];
         gameWinner = null;
       } catch (e) {}
       started = false;

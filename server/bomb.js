@@ -1,6 +1,149 @@
 // server/bomb.js
 // Bomb logic for the game server
 
+// ============= POWER-UP DEFINITIONS =============
+const POWERUP_TYPE_KEYS = ["bombs", "flames", "speed", "wallpass", "detonator"];
+const POWERUP_DROP_CHANCE = 0.25; // 25% chance a destroyed block drops a power-up
+
+/**
+ * Spawn power-ups from destroyed blocks
+ * Each block has a POWERUP_DROP_CHANCE to drop a random power-up
+ */
+export function spawnPowerUps(lobby, destroyedBlocks, broadcastFunc) {
+  if (!lobby.powerUps) lobby.powerUps = [];
+
+  const newPowerUps = [];
+  destroyedBlocks.forEach((block) => {
+    if (Math.random() < POWERUP_DROP_CHANCE) {
+      const typeKey =
+        POWERUP_TYPE_KEYS[Math.floor(Math.random() * POWERUP_TYPE_KEYS.length)];
+      const powerUp = {
+        id: `pu-${block.x}-${block.y}-${Date.now()}`,
+        x: block.x,
+        y: block.y,
+        type: typeKey,
+      };
+      lobby.powerUps.push(powerUp);
+      newPowerUps.push(powerUp);
+    }
+  });
+
+  if (newPowerUps.length > 0) {
+    broadcastFunc("powerUpSpawned", { powerUps: newPowerUps });
+    console.log(
+      `[bomb] Spawned ${newPowerUps.length} power-up(s):`,
+      newPowerUps.map((p) => `${p.type}@(${p.x},${p.y})`).join(", "),
+    );
+  }
+}
+
+/**
+ * Check if a player picks up a power-up at their position
+ * Uses hitbox overlap for precise pickup detection
+ */
+export function checkPowerUpPickup(lobby, player, broadcastFunc) {
+  if (!lobby.powerUps || lobby.powerUps.length === 0) return;
+  if (player.dead) return;
+  if (typeof player.x !== "number" || typeof player.y !== "number") return;
+
+  const HITBOX_SIZE = 0.6;
+  const offset = (1 - HITBOX_SIZE) / 2;
+  const pLeft = player.x + offset;
+  const pRight = player.x + offset + HITBOX_SIZE;
+  const pTop = player.y + offset;
+  const pBottom = player.y + offset + HITBOX_SIZE;
+
+  const pickedUp = [];
+
+  lobby.powerUps = lobby.powerUps.filter((pu) => {
+    // Power-up occupies [pu.x, pu.x+1) x [pu.y, pu.y+1)
+    const overlaps = !(
+      pRight <= pu.x ||
+      pLeft >= pu.x + 1 ||
+      pBottom <= pu.y ||
+      pTop >= pu.y + 1
+    );
+
+    if (overlaps) {
+      // Apply power-up effect to player
+      applyPowerUp(player, pu.type);
+      pickedUp.push(pu);
+      return false; // Remove from map
+    }
+    return true;
+  });
+
+  if (pickedUp.length > 0) {
+    pickedUp.forEach((pu) => {
+      console.log(
+        `[bomb] Player ${player.pseudo} picked up ${pu.type} at (${pu.x},${pu.y})`,
+      );
+      broadcastFunc("powerUpCollected", {
+        powerUpId: pu.id,
+        playerId: player.id,
+        puType: pu.type,
+        // Send updated player stats
+        playerStats: {
+          maxBombs: player.maxBombs || 1,
+          bombRange: player.bombRange || 3,
+          speed: player.speed || 4,
+          wallpass: !!player.wallpass,
+          detonator: !!player.detonator,
+        },
+      });
+    });
+  }
+}
+
+/**
+ * Apply a power-up effect to a player
+ */
+function applyPowerUp(player, type) {
+  switch (type) {
+    case "bombs":
+      player.maxBombs = Math.min((player.maxBombs || 1) + 1, 8); // cap at 8
+      break;
+    case "flames":
+      player.bombRange = Math.min((player.bombRange || 3) + 1, 10); // cap at 10
+      break;
+    case "speed":
+      player.speed = Math.min((player.speed || 4) + 0.5, 8); // cap at 8
+      break;
+    case "wallpass":
+      player.wallpass = true;
+      break;
+    case "detonator":
+      player.detonator = true;
+      break;
+  }
+}
+
+/**
+ * Detonate all bombs placed by a player (detonator power-up)
+ */
+export function detonateBombs(lobby, player, broadcastFunc) {
+  if (!player.detonator) return false;
+  if (!lobby.bombs || lobby.bombs.length === 0) return false;
+
+  const playerBombs = lobby.bombs.filter((b) => b.playerId === player.id);
+  if (playerBombs.length === 0) return false;
+
+  // Force all player's bombs to explode immediately by setting explosionTime to now
+  const now = Date.now();
+  playerBombs.forEach((bomb) => {
+    bomb.explosionTime = now - 1; // Ensure it triggers on next check
+  });
+
+  console.log(
+    `[bomb] Player ${player.pseudo} detonated ${playerBombs.length} bomb(s)`,
+  );
+
+  // Immediately trigger explosion check so detonation feels instant
+  checkBombExplosions(lobby, broadcastFunc);
+
+  return true;
+}
+
 /**
  * Place a bomb at the player's position
  */
@@ -141,20 +284,37 @@ export function updateBombPlayerTracking(
 }
 
 /**
- * Check and trigger bomb explosions
+ * Check and trigger bomb explosions (with chain reaction support)
+ * Uses a loop: after each batch of explosions, any bombs that were
+ * chain-triggered (explosionTime set to 0) are exploded immediately
+ * in the next iteration, preventing them from being silently removed.
  */
 export function checkBombExplosions(lobby, broadcastFunc) {
   if (!lobby.bombs || lobby.bombs.length === 0) return;
 
-  const now = Date.now();
-  const explodingBombs = lobby.bombs.filter((b) => b.explosionTime <= now);
+  const explodedIds = new Set();
+  let safety = 50; // prevent infinite loops
 
-  explodingBombs.forEach((bomb) => {
-    explodeBomb(lobby, bomb, broadcastFunc);
-  });
+  while (safety-- > 0) {
+    const now = Date.now();
+    const explodingBombs = lobby.bombs.filter(
+      (b) => b.explosionTime <= now && !explodedIds.has(b.id),
+    );
 
-  // Remove exploded bombs
-  lobby.bombs = lobby.bombs.filter((b) => b.explosionTime > now);
+    if (explodingBombs.length === 0) break;
+
+    // Mark them as exploded before processing (so chain reactions
+    // don't try to re-trigger them)
+    explodingBombs.forEach((b) => explodedIds.add(b.id));
+
+    // Explode each bomb (may set other bombs' explosionTime = 0)
+    explodingBombs.forEach((bomb) => {
+      explodeBomb(lobby, bomb, broadcastFunc);
+    });
+
+    // Remove exploded bombs from the array
+    lobby.bombs = lobby.bombs.filter((b) => !explodedIds.has(b.id));
+  }
 }
 
 /**
@@ -295,12 +455,51 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
     timestamp: Date.now(),
   });
 
-  // If blocks were destroyed, broadcast updated map
+  // ✅ Destroy power-ups caught in the explosion
+  if (lobby.powerUps && lobby.powerUps.length > 0) {
+    const destroyedPowerUps = [];
+    lobby.powerUps = lobby.powerUps.filter((pu) => {
+      const hit = explosionCells.some(
+        (cell) => cell.x === pu.x && cell.y === pu.y,
+      );
+      if (hit) {
+        destroyedPowerUps.push(pu.id);
+        console.log(
+          `[bomb] Power-up ${pu.type} at (${pu.x},${pu.y}) destroyed by explosion`,
+        );
+      }
+      return !hit;
+    });
+    if (destroyedPowerUps.length > 0) {
+      broadcastFunc("powerUpDestroyed", { powerUpIds: destroyedPowerUps });
+    }
+  }
+
+  // ✅ Chain reaction: trigger other bombs caught in the explosion
+  if (lobby.bombs && lobby.bombs.length > 0) {
+    lobby.bombs.forEach((otherBomb) => {
+      if (otherBomb.id === bomb.id) return; // skip self
+      if (otherBomb.explosionTime <= now) return; // already exploding
+      const caught = explosionCells.some(
+        (cell) => cell.x === otherBomb.x && cell.y === otherBomb.y,
+      );
+      if (caught) {
+        otherBomb.explosionTime = 0; // will trigger on next tick
+        console.log(
+          `[bomb] Chain reaction: bomb at (${otherBomb.x},${otherBomb.y}) triggered`,
+        );
+      }
+    });
+  }
+
+  // If blocks were destroyed, broadcast updated map and spawn power-ups
   if (destroyedBlocks.length > 0) {
     broadcastFunc("mapUpdate", {
       map: lobby.map,
       destroyedBlocks,
     });
+    // ✅ Spawn power-ups from destroyed blocks
+    spawnPowerUps(lobby, destroyedBlocks, broadcastFunc);
   }
 }
 

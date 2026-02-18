@@ -10,6 +10,8 @@ import {
   placeBomb,
   checkBombExplosions,
   updateBombPlayerTracking,
+  checkPowerUpPickup,
+  detonateBombs,
 } from "../server/bomb.js";
 
 const wss = new WebSocketServer({ port: 9001 });
@@ -180,7 +182,24 @@ function now() {
  * `payload` should already include a `type` property.
  */
 function broadcast(code, payload) {
-  const msg = JSON.stringify(payload);
+  let msg;
+  try {
+    msg = JSON.stringify(payload, (key, value) => {
+      // Skip non-serializable properties from player objects
+      if (key === "ws" || key === "_moveInterval" || key === "_inputState")
+        return undefined;
+      if (value instanceof Set) return undefined;
+      return value;
+    });
+  } catch (e) {
+    console.error(
+      "[broadcast] JSON.stringify failed:",
+      e.message,
+      "type:",
+      payload?.type,
+    );
+    return;
+  }
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN && client.lobbyCode === code) {
       try {
@@ -233,6 +252,7 @@ function ensureLobby(code) {
       if (!lobby) return;
       lobby.state = "in-game";
       lobby.bombs = []; // ✅ Reset bombs on game start
+      lobby.powerUps = []; // ✅ Reset power-ups on game start
       lobby._gameWinBroadcasted = false; // ✅ Reset win flag for new game
 
       try {
@@ -293,6 +313,31 @@ function ensureLobby(code) {
           });
         }, 100); // Check every 100ms
 
+        // ✅ Start server-side game timer (5 minutes = 300s)
+        lobby._gameStartTime = Date.now();
+        lobby._gameDuration = 300 * 1000; // 5 minutes in ms
+        if (lobby._gameTimerTimeout) clearTimeout(lobby._gameTimerTimeout);
+        lobby._gameTimerTimeout = setTimeout(() => {
+          if (!lobby || lobby.state !== "in-game") return;
+          if (lobby._gameWinBroadcasted) return; // already won
+
+          console.log(`[lobby ${code}] Game timer expired — draw!`);
+          lobby._gameWinBroadcasted = true;
+          broadcast(code, {
+            type: "gameWin",
+            winnerId: null,
+            winnerPseudo: null,
+          });
+
+          if (!lobby._returnToLobbyScheduled) {
+            lobby._returnToLobbyScheduled = true;
+            setTimeout(() => {
+              lobby._returnToLobbyScheduled = false;
+              exitToLobby(code);
+            }, 5000);
+          }
+        }, lobby._gameDuration);
+
         // initialize player positions at spawn corners
         const spawns = [
           { x: 1, y: 1 }, // TL
@@ -321,6 +366,13 @@ function ensureLobby(code) {
           p.deathTime = null;
           p.invincibleUntil = null;
 
+          // ✅ Initialize power-up stats
+          p.maxBombs = 1;
+          p.bombRange = 3;
+          p.speed = 4;
+          p.wallpass = false;
+          p.detonator = false;
+
           console.log(
             `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y}) with ${p.lives} lives`,
           );
@@ -341,8 +393,12 @@ function ensureLobby(code) {
 }
 
 function exitToLobby(code) {
+  console.log(`[exitToLobby] Called for lobby ${code}`);
   const lobby = lobbys[code];
-  if (!lobby) return;
+  if (!lobby) {
+    console.log(`[exitToLobby] No lobby found for ${code}`);
+    return;
+  }
   if (lobby.timer) lobby.timer.clearTimer();
 
   // ✅ Clear bomb check interval
@@ -351,8 +407,15 @@ function exitToLobby(code) {
     lobby.bombCheckInterval = null;
   }
 
+  // ✅ Clear game timer
+  if (lobby._gameTimerTimeout) {
+    clearTimeout(lobby._gameTimerTimeout);
+    lobby._gameTimerTimeout = null;
+  }
+
   lobby.state = "lobby";
   lobby.bombs = []; // ✅ Clear bombs
+  lobby.powerUps = []; // ✅ Clear power-ups
   lobby._gameWinBroadcasted = false; // ✅ Reset win flag for next game
   lobby._returnToLobbyScheduled = false; // ✅ Reset return-to-lobby flag
 
@@ -381,10 +444,19 @@ function exitToLobby(code) {
     p.dead = false;
     p.deathTime = null;
     p.invincibleUntil = null;
+    // ✅ Reset power-up stats
+    p.maxBombs = 1;
+    p.bombRange = 3;
+    p.speed = 4;
+    p.wallpass = false;
+    p.detonator = false;
     delete p.x;
     delete p.y;
   });
 
+  console.log(
+    `[exitToLobby] Broadcasting lobby event to ${lobby.players.length} player(s) in ${code}`,
+  );
   broadcast(code, {
     type: "lobby",
     players: lobby.players,
@@ -392,6 +464,7 @@ function exitToLobby(code) {
     queue: lobby.queue.map((q) => q.pseudo),
     code,
   });
+  console.log(`[exitToLobby] Done for lobby ${code}`);
 }
 
 // ------------------ Per-player movement relay (server-side integration) ------------------
@@ -400,6 +473,19 @@ const MOVE_HZ = 60; // updates per second for each moving player
 const MOVE_INTERVAL_MS = Math.round(1000 / MOVE_HZ);
 const SPEED_CELLS_PER_SEC = 4; // how many tiles per second the player moves (same as client)
 const HITBOX_SIZE = 0.6; // ✅ Constant hitbox size for consistency
+
+/**
+ * Create a virtual map where blocks are treated as floor (for wallpass power-up)
+ */
+function getWallpassMap(map) {
+  if (!map || !map.grid) return map;
+  return {
+    ...map,
+    grid: map.grid.map((row) =>
+      row.map((cell) => (cell === "block" ? "floor" : cell)),
+    ),
+  };
+}
 
 // helper to start per-player movement interval
 function startPlayerMoveInterval(lobby, player) {
@@ -441,8 +527,10 @@ function startPlayerMoveInterval(lobby, player) {
     const len = Math.sqrt(vx * vx + vy * vy) || 1;
     const nx = vx / len;
     const ny = vy / len;
-    const moveX = nx * SPEED_CELLS_PER_SEC * dt;
-    const moveY = ny * SPEED_CELLS_PER_SEC * dt;
+    // ✅ Use player's speed stat (modified by speed power-up)
+    const playerSpeed = player.speed || SPEED_CELLS_PER_SEC;
+    const moveX = nx * playerSpeed * dt;
+    const moveY = ny * playerSpeed * dt;
 
     if (typeof player.x !== "number") player.x = 1;
     if (typeof player.y !== "number") player.y = 1;
@@ -458,8 +546,9 @@ function startPlayerMoveInterval(lobby, player) {
     }
 
     // Apply collision detection
+    // ✅ If player has wallpass, use a modified collision that ignores blocks
     const resolved = resolveCollision(
-      lobby.map,
+      player.wallpass ? getWallpassMap(lobby.map) : lobby.map,
       oldX,
       oldY,
       newX,
@@ -477,6 +566,11 @@ function startPlayerMoveInterval(lobby, player) {
     // ✅ Update bomb player tracking
     updateBombPlayerTracking(lobby, player.id, player.x, player.y);
 
+    // ✅ Check for power-up pickups
+    checkPowerUpPickup(lobby, player, (type, payload) => {
+      broadcast(lobby.code, { type, ...payload });
+    });
+
     // Broadcast position
     try {
       const payload = {
@@ -489,6 +583,11 @@ function startPlayerMoveInterval(lobby, player) {
           lives: player.lives,
           dead: player.dead,
           invincibleUntil: player.invincibleUntil,
+          maxBombs: player.maxBombs,
+          bombRange: player.bombRange,
+          speed: player.speed,
+          wallpass: player.wallpass,
+          detonator: player.detonator,
         },
         source: "server-move",
         ts: Date.now(),
@@ -768,6 +867,11 @@ wss.on("connection", (ws) => {
               timestamp: Date.now(),
             });
           }
+        } else if (payload.action === "detonate") {
+          // ✅ Handle detonator power-up action
+          detonateBombs(lobby, player, (type, payload) => {
+            broadcast(code, { type, ...payload });
+          });
         } else {
           // Other actions
           broadcast(code, {

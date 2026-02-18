@@ -59,8 +59,8 @@ export function ChatPanel({ chat = [], nickname }) {
                 msg.system
                   ? "#f9e56e"
                   : msg.author === nickname
-                  ? "#45ffc0"
-                  : "#afffd9"
+                    ? "#45ffc0"
+                    : "#afffd9"
               };
               font-weight: ${msg.system ? "bold" : "normal"};
               background: ${msg.system ? "rgba(240,212,80,0.08)" : "none"};
@@ -94,9 +94,11 @@ export function ChatPanel({ chat = [], nickname }) {
           {
             tag: "input",
             attrs: {
+              id: "chat-draft",
               name: "message",
               type: "text",
               placeholder: "Votre message...",
+              autocomplete: "off",
               style: `
                 width: 100%;
                 padding: 6px 8px;
