@@ -349,9 +349,10 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
   const isLocal = p.id === localPlayerId;
   const initials = (p.pseudo || `J${index + 1}`).slice(0, 3).toUpperCase();
 
-  // Hearts display (max 5)
+  // Hearts display (max 5, show up to the max of lives or 3)
+  const maxHearts = Math.max(3, Math.min(lives, 5));
   const hearts = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < maxHearts; i++) {
     hearts.push({
       tag: "span",
       attrs: {

@@ -8,6 +8,7 @@ const POWERUP_TYPE_KEYS = [
   "speed",
   "wallpass",
   "detonator",
+  "liveup",
   "vest",
   "skull",
 ];
@@ -29,6 +30,7 @@ const VEST_DURATION = 10000; // 10 seconds
 const POWERUP_SCORE_BONUS = {
   vest: 500,
   skull: 6000,
+  liveup: 300,
   bombs: 100,
   flames: 100,
   speed: 100,
@@ -127,6 +129,7 @@ export function checkPowerUpPickup(lobby, player, broadcastFunc) {
         scoreBonus,
         // Send updated player stats
         playerStats: {
+          lives: player.lives,
           maxBombs: player.maxBombs || 1,
           bombRange: player.bombRange || 3,
           speed: player.speed || 4,
@@ -165,6 +168,14 @@ function applyPowerUp(player, type) {
       break;
     case "detonator":
       player.detonator = true;
+      break;
+    case "liveup":
+      // Extra life, cap at 5
+      if (typeof player.lives !== "number") player.lives = 3;
+      player.lives = Math.min(player.lives + 1, 5);
+      console.log(
+        `[bomb] Player ${player.pseudo} gained a life! Lives: ${player.lives}`,
+      );
       break;
     case "vest":
       // 10 seconds of invincibility

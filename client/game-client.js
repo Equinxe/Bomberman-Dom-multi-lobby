@@ -666,6 +666,7 @@ export function attachClientGame(socket, container, opts = {}) {
             detonator: p.detonator !== undefined ? p.detonator : pl.detonator,
             vestActive:
               p.vestActive !== undefined ? p.vestActive : pl.vestActive,
+            vestUntil: p.vestUntil !== undefined ? p.vestUntil : pl.vestUntil,
             skullEffect:
               p.skullEffect !== undefined ? p.skullEffect : pl.skullEffect,
             skullUntil:
@@ -828,6 +829,10 @@ export function attachClientGame(socket, container, opts = {}) {
           if (p.id === msg.playerId) {
             return {
               ...p,
+              lives:
+                msg.playerStats.lives !== undefined
+                  ? msg.playerStats.lives
+                  : p.lives,
               maxBombs: msg.playerStats.maxBombs,
               bombRange: msg.playerStats.bombRange,
               speed: msg.playerStats.speed,
@@ -983,18 +988,33 @@ export function attachClientGame(socket, container, opts = {}) {
   let _winOverlayEl = null;
   function showWinOverlay(winner) {
     removeWinOverlay();
-    const isLocalWinner = winner.id === localPlayerId;
-    const borderColor = isLocalWinner ? "#3be6aa" : "#ff5555";
-    const glowColor = isLocalWinner
-      ? "rgba(59,230,170,0.5)"
-      : "rgba(255,85,85,0.4)";
-    const textColor = isLocalWinner ? "#3be6aa" : "#ff5555";
-    const titleText = isLocalWinner
-      ? "\uD83C\uDFC6 VICTORY! \uD83C\uDFC6"
-      : "GAME OVER";
-    const subText = winner.pseudo
-      ? `${winner.pseudo} wins!`
-      : "Draw \u2014 no winner!";
+    const isDraw = !winner.id && !winner.pseudo;
+    const isLocalWinner = !isDraw && winner.id === localPlayerId;
+    const borderColor = isDraw
+      ? "#ffaa33"
+      : isLocalWinner
+        ? "#3be6aa"
+        : "#ff5555";
+    const glowColor = isDraw
+      ? "rgba(255,170,50,0.4)"
+      : isLocalWinner
+        ? "rgba(59,230,170,0.5)"
+        : "rgba(255,85,85,0.4)";
+    const textColor = isDraw
+      ? "#ffaa33"
+      : isLocalWinner
+        ? "#3be6aa"
+        : "#ff5555";
+    const titleText = isDraw
+      ? "⏰ DRAW!"
+      : isLocalWinner
+        ? "\uD83C\uDFC6 VICTORY! \uD83C\uDFC6"
+        : "GAME OVER";
+    const subText = isDraw
+      ? "Time's up \u2014 nobody wins!"
+      : winner.pseudo
+        ? `${winner.pseudo} wins!`
+        : "Draw \u2014 no winner!";
 
     const overlay = document.createElement("div");
     overlay.id = "game-win-overlay";

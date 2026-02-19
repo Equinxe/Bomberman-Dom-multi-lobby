@@ -327,6 +327,7 @@ function ensureLobby(code) {
 
           console.log(`[lobby ${code}] Game timer expired — draw!`);
           lobby._gameWinBroadcasted = true;
+          lobby._isDraw = true; // ✅ Mark as draw so exitToLobby shows correct message
           broadcast(code, {
             type: "gameWin",
             winnerId: null,
@@ -433,10 +434,20 @@ function exitToLobby(code) {
   lobby._returnToLobbyScheduled = false; // ✅ Reset return-to-lobby flag
 
   // ✅ Find the winner before resetting state
-  const winner = lobby.players.find((p) => !p.dead);
-  const winnerText = winner
-    ? `🏆 ${winner.pseudo} a gagné la partie !`
-    : `La partie est terminée — match nul !`;
+  // If it was a draw (timer expired), show draw message even if players are alive
+  let winnerText;
+  if (lobby._isDraw) {
+    winnerText = `⏰ Temps écoulé — match nul ! Personne ne gagne.`;
+  } else {
+    const winner = lobby.players.find((p) => !p.dead);
+    const alivePlayers = lobby.players.filter((p) => !p.dead);
+    if (alivePlayers.length === 1 && winner) {
+      winnerText = `🏆 ${winner.pseudo} a gagné la partie !`;
+    } else {
+      winnerText = `La partie est terminée — match nul !`;
+    }
+  }
+  lobby._isDraw = false; // Reset for next game
 
   lobby.players.forEach((p) => (p.ready = false));
   lobby.chat.push({
@@ -611,6 +622,7 @@ function startPlayerMoveInterval(lobby, player) {
           wallpass: player.wallpass,
           detonator: player.detonator,
           vestActive: player.vestActive || false,
+          vestUntil: player.vestUntil || null,
           skullEffect: player.skullEffect || null,
           skullUntil: player.skullUntil || null,
           invisible: !!player.invisible,

@@ -359,6 +359,7 @@ export function GameView(options) {
         speed: "rgba(50,180,255,0.6)",
         wallpass: "rgba(160,100,255,0.6)",
         detonator: "rgba(255,50,50,0.6)",
+        liveup: "rgba(255,80,150,0.7)",
         vest: "rgba(255,220,50,0.8)",
         skull: "rgba(180,50,255,0.7)",
       };
@@ -395,6 +396,7 @@ export function GameView(options) {
       speed: "⚡",
       wallpass: "👻",
       detonator: "🎯",
+      liveup: "❤️",
       vest: "🛡️",
       skull: "💀",
     };
@@ -492,9 +494,17 @@ export function GameView(options) {
       let playerFilter = "";
 
       if (isVest) {
-        // ✅ Vest: golden flash (slower, more prominent than damage flash)
-        const flashOn = Math.floor(now / 150) % 3; // 3-phase flash
-        playerEffectStyle = `opacity: ${flashOn === 0 ? 1 : flashOn === 1 ? 0.7 : 0.9};`;
+        // ✅ Vest: golden flash — faster in last 2 seconds as warning
+        const vestTimeLeft = (p.vestUntil || 0) - now;
+        const vestExpiring = vestTimeLeft > 0 && vestTimeLeft <= 2000;
+        if (vestExpiring) {
+          // Fast urgent flash in last 2s
+          const flashOn = Math.floor(now / 60) % 2 === 0;
+          playerEffectStyle = `opacity: ${flashOn ? 1 : 0.15};`;
+        } else {
+          const flashOn = Math.floor(now / 150) % 3; // 3-phase flash
+          playerEffectStyle = `opacity: ${flashOn === 0 ? 1 : flashOn === 1 ? 0.7 : 0.9};`;
+        }
         playerFilter = `drop-shadow(0 0 8px rgba(255,220,50,0.9)) drop-shadow(0 0 16px rgba(255,180,0,0.5))`;
       } else if (isInvincible) {
         // Damage invincibility: rapid flash
@@ -503,7 +513,14 @@ export function GameView(options) {
       }
 
       if (isSkullCursed) {
-        // ✅ Skull curse: purple tint
+        // ✅ Skull curse: purple tint — faster flash in last 2 seconds
+        const skullTimeLeft = (p.skullUntil || 0) - now;
+        const skullExpiring = skullTimeLeft > 0 && skullTimeLeft <= 2000;
+        if (skullExpiring) {
+          // Fast urgent flash in last 2s to warn curse is ending
+          const flashOn = Math.floor(now / 60) % 2 === 0;
+          playerEffectStyle = `opacity: ${flashOn ? 1 : 0.2};`;
+        }
         playerFilter = `${playerFilter ? playerFilter + " " : ""}drop-shadow(0 0 6px rgba(180,50,255,0.8)) hue-rotate(270deg)`;
       }
 
