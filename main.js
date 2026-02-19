@@ -428,23 +428,3 @@ socket.init("ws://localhost:9001");
 
 // Ensure the initial UI is shown (nickname form if no nickname)
 showLobby();
-
-// Compute auto cell sizes for compatibility (we force 32px tiles at game start)
-(function initGameClient() {
-  const preferredCols = 15;
-  const preferredRows = 13;
-  const vw = Math.max(
-    document.documentElement.clientWidth || 0,
-    window.innerWidth || 0,
-  );
-  const vh = Math.max(
-    document.documentElement.clientHeight || 0,
-    window.innerHeight || 0,
-  );
-  const maxWidth = Math.min(920, vw - 80);
-  const maxHeight = Math.floor(vh * 0.75);
-  const maxCellWidth = Math.floor(maxWidth / preferredCols);
-  const maxCellHeight = Math.floor(maxHeight / preferredRows);
-  let autoCell = Math.min(maxCellWidth || 36, maxCellHeight || 36);
-  autoCell = Math.max(24, Math.min(80, autoCell));
-})();

@@ -1,24 +1,6 @@
 // server/collision.js
 // Server-side collision detection with improved sliding algorithm
-
-/**
- * Check if a cell is solid (wall or block)
- */
-export function isSolidCell(cell) {
-  if (!cell && cell !== 0) return false;
-  if (typeof cell === "string") {
-    return cell === "wall" || cell === "wallDark" || cell === "block";
-  }
-  if (typeof cell === "object" && cell.type) {
-    return (
-      cell.type === "wall" || cell.type === "wallDark" || cell.type === "block"
-    );
-  }
-  if (typeof cell === "number") {
-    return cell === 0 || cell === 1;
-  }
-  return false;
-}
+import { isSolidCell } from "../shared/cell-types.js";
 
 /**
  * Get player hitbox in world coordinates
@@ -95,7 +77,7 @@ export function resolveCollision(
   oldY,
   newX,
   newY,
-  hitboxSize = 0.6
+  hitboxSize = 0.6,
 ) {
   if (!map || !map.grid) {
     console.warn("[resolveCollision] No map or grid provided");

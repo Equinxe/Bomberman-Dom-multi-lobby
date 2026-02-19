@@ -1,11 +1,10 @@
-export const PLAYER_COLORS = [
-  { name: "Blanc", code: "#fff" },
-  { name: "Noir", code: "#222" },
-  { name: "Rouge", code: "#ff525d" },
-  { name: "Bleu", code: "#3daaff" },
-  { name: "Vert", code: "#43ff8e" },
-  { name: "Jaune", code: "#ffe854" },
-];
+// Re-export shared constants so existing imports keep working
+export {
+  PLAYER_COLORS,
+  POWERUP_TYPE_KEYS,
+  POWERUP_DROP_CHANCE,
+  PLAYER_HITBOX_SIZE,
+} from "../../shared/constants.js";
 
 // Players.png layout: 304x687, blue bg (0,128,255)
 // margin=4px from edge to first sprite, sprite=24x24, gap=1px between sprites
@@ -49,9 +48,6 @@ export const SHEET_HEIGHT = 687;
 export const PLAYER_SHEET_MARGIN = 4; // px from edge to first sprite
 export const PLAYER_SHEET_SPACING = 1; // px gap between sprites
 export const PLAYER_SHEET_STRIDE = 25; // SPRITE_SIZE + SPACING
-
-// Collision constants
-export const PLAYER_HITBOX_SIZE = 0.6;
 
 // ✅ Animation configuration for each direction
 // The walk cycle in the sprite sheet is: idle, walkA, idle, walkB
@@ -254,18 +250,3 @@ export const POWERUP_TYPES = {
     description: "Random curse",
   },
 };
-
-// Power-up types that can drop from blocks (gameplay-relevant ones)
-export const POWERUP_TYPE_KEYS = [
-  "flames",
-  "bombs",
-  "speed",
-  "detonator",
-  "wallpass",
-  "liveup",
-  "vest",
-  "skull",
-];
-
-// Probability that a destroyed block drops a power-up
-export const POWERUP_DROP_CHANCE = 0.25; // 25%

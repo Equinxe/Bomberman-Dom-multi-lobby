@@ -4,6 +4,7 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
+    "start": "node multiplayer/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

@@ -15,6 +15,10 @@ import {
   checkTimedEffects,
 } from "../server/bomb.js";
 import { generateMapFromSeed } from "../shared/map-generator.js";
+import {
+  resetPlayerStats,
+  getSpawnPosition,
+} from "../shared/player-defaults.js";
 
 const wss = new WebSocketServer({ port: 9001 });
 
@@ -200,15 +204,9 @@ function ensureLobby(code) {
         }, lobby._gameDuration);
 
         // initialize player positions at spawn corners
-        const spawns = [
-          { x: 1, y: 1 }, // TL
-          { x: cols - 2, y: rows - 2 }, // BR
-          { x: cols - 2, y: 1 }, // TR
-          { x: 1, y: rows - 2 }, // BL
-        ];
         lobby.players.forEach((p, idx) => {
           if (typeof p.x !== "number" || typeof p.y !== "number") {
-            const s = spawns[idx % spawns.length];
+            const s = getSpawnPosition(idx, cols, rows);
             p.x = s.x;
             p.y = s.y;
           }
@@ -221,27 +219,9 @@ function ensureLobby(code) {
           };
           p._moveInterval = p._moveInterval || null;
 
-          // ✅ Initialize lives and death state
-          p.lives = 3;
-          p.dead = false;
-          p.deathTime = null;
-          p.invincibleUntil = Date.now() + 3000; // ✅ 3s spawn protection (vest-like effect)
-
-          // ✅ Initialize power-up stats
-          p.maxBombs = 1;
-          p.bombRange = 3;
-          p.speed = 4;
-          p.wallpass = false;
-          p.detonator = false;
-          p.vestActive = false;
-          p.vestUntil = null;
-          p.skullEffect = null;
-          p.skullUntil = null;
-          p.autoBomb = false;
-          p.invisible = false;
-          delete p.canPlaceBombs;
-          delete p._preSkull;
-          delete p._lastAutoBomb;
+          // ✅ Reset all stats to defaults and add spawn protection
+          resetPlayerStats(p);
+          p.invincibleUntil = Date.now() + 3000; // 3s spawn protection
 
           console.log(
             `[lobby ${code}] Player ${p.pseudo} spawned at (${p.x}, ${p.y}) with ${p.lives} lives`,
@@ -319,26 +299,8 @@ function exitToLobby(code) {
       p._moveInterval = null;
     }
     p._inputState = { left: false, right: false, up: false, down: false };
-    // ✅ Reset lives/death state for next game
-    p.lives = 3;
-    p.dead = false;
-    p.deathTime = null;
-    p.invincibleUntil = null;
-    // ✅ Reset power-up stats
-    p.maxBombs = 1;
-    p.bombRange = 3;
-    p.speed = 4;
-    p.wallpass = false;
-    p.detonator = false;
-    p.vestActive = false;
-    p.vestUntil = null;
-    p.skullEffect = null;
-    p.skullUntil = null;
-    p.autoBomb = false;
-    p.invisible = false;
-    delete p.canPlaceBombs;
-    delete p._preSkull;
-    delete p._lastAutoBomb;
+    // ✅ Reset all stats to defaults using shared helper
+    resetPlayerStats(p);
     delete p.x;
     delete p.y;
   });

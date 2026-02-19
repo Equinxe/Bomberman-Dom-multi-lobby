@@ -1,17 +1,10 @@
+import { PLAYER_COLORS } from "../../shared/constants.js";
+
 export function ColorSelector({
   selected = 0,
   takenColors = [],
   showLabels = false,
 }) {
-  const COLORS = [
-    { name: "Blanc", hex: "#ffffff" },
-    { name: "Noir", hex: "#000000" },
-    { name: "Rouge", hex: "#ff3b3b" },
-    { name: "Bleu", hex: "#2d9cff" },
-    { name: "Vert", hex: "#2ecc71" },
-    { name: "Jaune", hex: "#ffd166" },
-  ];
-
   return {
     tag: "div",
     attrs: {
@@ -19,7 +12,7 @@ export function ColorSelector({
       style:
         "display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;pointer-events:auto;",
     },
-    children: COLORS.map((c, idx) => {
+    children: PLAYER_COLORS.map((c, idx) => {
       const isTaken = takenColors.includes(idx) && idx !== selected; // allow if it's your own selected color
       return {
         tag: "div",

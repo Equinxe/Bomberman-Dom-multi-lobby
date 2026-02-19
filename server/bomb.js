@@ -1,18 +1,6 @@
 // server/bomb.js
 // Bomb logic for the game server
-
-// ============= POWER-UP DEFINITIONS =============
-const POWERUP_TYPE_KEYS = [
-  "bombs",
-  "flames",
-  "speed",
-  "wallpass",
-  "detonator",
-  "liveup",
-  "vest",
-  "skull",
-];
-const POWERUP_DROP_CHANCE = 0.25; // 25% chance a destroyed block drops a power-up
+import { POWERUP_TYPE_KEYS, POWERUP_DROP_CHANCE } from "../shared/constants.js";
 
 // ============= SKULL CURSE DEFINITIONS =============
 const SKULL_EFFECTS = [
@@ -501,49 +489,6 @@ export function placeBomb(lobby, player) {
   );
 
   return bomb;
-}
-
-/**
- * Check if a position has a bomb that should block the player
- * Uses hitbox collision for precise detection
- */
-export function isBombBlocking(lobby, playerId, x, y, hitboxSize = 0.6) {
-  if (!lobby.bombs) return false;
-
-  // Get player's hitbox
-  const playerHitbox = {
-    left: x + (1 - hitboxSize) / 2,
-    right: x + (1 - hitboxSize) / 2 + hitboxSize,
-    top: y + (1 - hitboxSize) / 2,
-    bottom: y + (1 - hitboxSize) / 2 + hitboxSize,
-  };
-
-  for (const bomb of lobby.bombs) {
-    // If player is inside the bomb cell, they can move freely
-    if (bomb.playersInside.has(playerId)) {
-      continue;
-    }
-
-    // Bomb occupies the entire cell from bomb.x to bomb.x+1, bomb.y to bomb.y+1
-    const bombLeft = bomb.x;
-    const bombRight = bomb.x + 1;
-    const bombTop = bomb.y;
-    const bombBottom = bomb.y + 1;
-
-    // Check AABB collision between player hitbox and bomb cell
-    const collides = !(
-      playerHitbox.right <= bombLeft ||
-      playerHitbox.left >= bombRight ||
-      playerHitbox.bottom <= bombTop ||
-      playerHitbox.top >= bombBottom
-    );
-
-    if (collides) {
-      return true; // Bomb blocks the player
-    }
-  }
-
-  return false;
 }
 
 /**
