@@ -268,4 +268,4 @@ export const POWERUP_TYPE_KEYS = [
 ];
 
 // Probability that a destroyed block drops a power-up
-export const POWERUP_DROP_CHANCE = 0.99; // 25%
+export const POWERUP_DROP_CHANCE = 0.25; // 25%
