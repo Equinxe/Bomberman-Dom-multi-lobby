@@ -1,5 +1,3 @@
-export * from "../LoaderArcade.js";
-
 export function LoaderArcade() {
   return {
     tag: "div",

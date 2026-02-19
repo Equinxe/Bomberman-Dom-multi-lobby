@@ -185,3 +185,46 @@ body::-webkit-scrollbar-thumb {
 #game-over-overlay > div {
   animation: panelPop 0.4s ease-out;
 }
+
+/* ====== PERFORMANCE: Layer promotion & paint containment ====== */
+
+/* Promote game map to its own compositing layer */
+#game-map-root {
+  will-change: transform;
+  transform: translateZ(0);
+  contain: layout style paint;
+}
+
+/* Promote HUD bars — they're fixed-position overlays */
+#hud-top, #hud-bottom {
+  will-change: contents;
+  contain: layout style;
+}
+
+/* Player sprites move every frame — promote to own layer */
+[data-player-id] {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  contain: layout style;
+  backface-visibility: hidden;
+}
+
+/* Bombs & explosions animate frequently */
+[data-bomb-id] {
+  will-change: transform;
+  contain: layout style;
+  backface-visibility: hidden;
+}
+
+/* Power-ups float/animate */
+[data-powerup-id] {
+  will-change: transform, opacity;
+  contain: layout style;
+  backface-visibility: hidden;
+}
+
+/* Win overlay */
+#game-win-overlay {
+  will-change: opacity;
+  contain: layout style;
+}

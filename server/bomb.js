@@ -71,6 +71,31 @@ export function spawnPowerUps(lobby, destroyedBlocks, broadcastFunc) {
 }
 
 /**
+ * ✅ BONUS: When a player dies, drop a random power-up at their position
+ */
+function spawnDeathPowerUp(lobby, player, broadcastFunc) {
+  if (!lobby.powerUps) lobby.powerUps = [];
+  if (typeof player.x !== "number" || typeof player.y !== "number") return;
+
+  const dropX = Math.round(player.x);
+  const dropY = Math.round(player.y);
+
+  const typeKey =
+    POWERUP_TYPE_KEYS[Math.floor(Math.random() * POWERUP_TYPE_KEYS.length)];
+  const powerUp = {
+    id: `pu-death-${player.id}-${Date.now()}`,
+    x: dropX,
+    y: dropY,
+    type: typeKey,
+  };
+  lobby.powerUps.push(powerUp);
+  broadcastFunc("powerUpSpawned", { powerUps: [powerUp] });
+  console.log(
+    `[bomb] Player ${player.pseudo} died → dropped ${typeKey} at (${dropX},${dropY})`,
+  );
+}
+
+/**
  * Check if a player picks up a power-up at their position
  * Uses hitbox overlap for precise pickup detection
  */
@@ -697,6 +722,9 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
           up: false,
           down: false,
         };
+
+        // ✅ BONUS: Dead player drops a random power-up at their position
+        spawnDeathPowerUp(lobby, player, broadcastFunc);
 
         // Broadcast playerDeath event
         broadcastFunc("playerDeath", {

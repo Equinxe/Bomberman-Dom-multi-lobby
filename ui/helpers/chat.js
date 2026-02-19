@@ -1,6 +1,4 @@
-export * from "../chat.js";
-
-import { registerEvent } from "../Core/events.js";
+import { registerEvent } from "../../Core/events.js";
 export function Chat({ messages, onSend }) {
   registerEvent("handleSendMessage", onSend);
   return {
