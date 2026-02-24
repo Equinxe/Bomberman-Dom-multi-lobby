@@ -24,10 +24,11 @@ export function TeamSelector({
       class: "team-selector",
       style: `
         display: flex;
-        gap: 6px;
+        gap: 4px;
         justify-content: center;
         align-items: center;
-        padding: 4px 0;
+        padding: 2px 0;
+        max-width: 100%;
       `,
     },
     children: teams.map((teamId) => {
@@ -61,17 +62,18 @@ export function TeamSelector({
           "data-team": String(teamId),
           style: `
             font-family: 'Press Start 2P', monospace;
-            font-size: 9px;
-            padding: 5px 10px;
-            border-radius: 8px;
+            font-size: 7px;
+            padding: 4px 8px;
+            border-radius: 6px;
             border: 2px solid ${borderColor};
             background: ${bgColor};
             color: ${textColor};
             cursor: ${cursor};
             opacity: ${opacity};
             transition: all 0.2s ease;
-            min-width: 58px;
+            min-width: 48px;
             text-align: center;
+            white-space: nowrap;
             ${isSelected ? `box-shadow: 0 0 8px ${info.glow};` : ""}
           `,
           disabled: disabled || isFull ? "true" : undefined,

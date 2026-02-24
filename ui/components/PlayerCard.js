@@ -8,7 +8,7 @@ import {
 } from "./../helpers/constants.js";
 
 // Preview zoom used in both PlayerPreview and this card's container
-const PREVIEW_ZOOM = 5;
+const PREVIEW_ZOOM = 4;
 
 // Art dimensions within each sprite cell (cropped from 24x32 cell)
 const ART_WIDTH = 20;
@@ -53,18 +53,19 @@ export function PlayerCard({
     attrs: {
       style: `
         background: linear-gradient(170deg, rgba(18,36,26,0.92) 0%, rgba(24,44,32,0.88) 100%);
-        border-radius: 20px;
-        padding: 18px 16px 16px 16px;
-        width: 260px;
-        min-height: 290px;
+        border-radius: 18px;
+        padding: 14px 14px 12px 14px;
+        width: 250px;
+        min-height: 0;
         box-shadow: ${cardGlow};
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: flex-start;
-        gap: 6px;
+        gap: 4px;
         border: 2px solid ${borderColor};
         position: relative;
+        overflow: hidden;
         transition: box-shadow 0.35s ease, border-color 0.35s ease;
       `,
       class: "lobby-player-block player-card",
@@ -88,11 +89,11 @@ export function PlayerCard({
         tag: "div",
         attrs: {
           style: `
-            font-size: 15px;
+            font-size: 13px;
             color: ${player.ready ? "#45ffc0" : "#ddfff0"};
             font-weight: bold;
             letter-spacing: 1.5px;
-            margin-bottom: 2px;
+            margin-bottom: 1px;
             text-align: center;
             max-width: 220px;
             overflow: hidden;
@@ -138,7 +139,7 @@ export function PlayerCard({
                 justify-content: center;
                 flex: 1;
                 width: 100%;
-                gap: 10px;
+                gap: 6px;
               `,
             },
             children: [
@@ -152,7 +153,7 @@ export function PlayerCard({
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    margin: 6px auto;
+                    margin: 2px auto;
                     background: radial-gradient(ellipse at center, rgba(69,255,192,0.06) 0%, transparent 70%);
                     border-radius: 12px;
                     overflow: hidden;
@@ -238,16 +239,16 @@ export function PlayerCard({
             tag: "div",
             attrs: {
               class: "player-ready-wrap",
-              style: "margin-top: 6px;",
+              style: "margin-top: 4px;",
             },
             children: [
               {
                 tag: "button",
                 attrs: {
                   style: `
-                    padding: 10px 36px;
-                    font-size: 13px;
-                    border-radius: 12px;
+                    padding: 8px 28px;
+                    font-size: 12px;
+                    border-radius: 10px;
                     background: ${
                       player.ready
                         ? "linear-gradient(135deg, #ff6b6b 0%, #c0392b 100%)"

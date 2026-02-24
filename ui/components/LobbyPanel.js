@@ -80,18 +80,20 @@ export function LobbyPanel({
         border-radius: 28px;
         box-shadow: 0 8px 40px 0 rgba(52,255,204,0.12), 0 0 0 1px rgba(59,230,170,0.2) inset;
         border: 3px solid rgba(59,230,170,0.5);
-        padding: 36px 36px 24px 36px;
+        padding: 28px 32px 20px 32px;
         min-width: 680px;
         max-width: 780px;
         width: 780px;
-        min-height: 720px;
-        max-height: 860px;
+        min-height: 0;
+        max-height: 92vh;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 14px;
-        justify-content: center;
+        gap: 10px;
+        justify-content: flex-start;
         position: relative;
+        overflow-y: auto;
+        overflow-x: hidden;
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
       `,
@@ -102,44 +104,24 @@ export function LobbyPanel({
         tag: "div",
         attrs: {
           style:
-            "font-size:26px;color:#45ffc0;letter-spacing:3px;text-align:center;margin-bottom:2px;text-shadow:0 0 20px rgba(69,255,192,0.25);",
+            "font-size:22px;color:#45ffc0;letter-spacing:3px;text-align:center;text-shadow:0 0 20px rgba(69,255,192,0.25);",
         },
         children: [`Joueurs (${players.length}/4)`],
       },
       // ✅ Game mode settings (owner can change, others see current mode)
       LobbySettings({ gameMode, isOwner }),
-      // ✅ Team mode indicator (only in team mode)
-      isTeamMode
-        ? {
-            tag: "div",
-            attrs: {
-              style: `
-                font-size: 10px;
-                color: #ffaa33;
-                text-align: center;
-                letter-spacing: 2px;
-                padding: 3px 12px;
-                border-radius: 6px;
-                background: rgba(255,170,50,0.1);
-                border: 1px solid rgba(255,170,50,0.3);
-                margin-bottom: 2px;
-              `,
-            },
-            children: ["⚔ MODE ÉQUIPE (2v2)"],
-          }
-        : null,
       // Lobby code row
       {
         tag: "div",
         attrs: {
           style: `
-            font-size:18px;
+            font-size:16px;
             color:#9fead0;
             text-align:center;
-            margin-bottom:14px;
+            margin-bottom:8px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             justify-content:center;
           `,
         },
@@ -190,12 +172,13 @@ export function LobbyPanel({
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr;
-            gap: 20px 32px;
+            gap: 16px 28px;
             width: 100%;
             justify-items: center;
             align-items: start;
             flex: 1;
-            margin-bottom: 8px;
+            min-height: 0;
+            margin-bottom: 4px;
           `,
         },
         children: [0, 1, 2, 3].map((i) => {
