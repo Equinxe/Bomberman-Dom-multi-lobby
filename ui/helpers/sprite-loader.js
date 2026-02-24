@@ -45,11 +45,19 @@ export function getTransparentSpriteUrl(originalUrl) {
           const b = data[i + 2];
 
           // Green background (186,254,202) with tolerance
-          if (Math.abs(r - 186) <= 3 && Math.abs(g - 254) <= 3 && Math.abs(b - 202) <= 3) {
+          if (
+            Math.abs(r - 186) <= 3 &&
+            Math.abs(g - 254) <= 3 &&
+            Math.abs(b - 202) <= 3
+          ) {
             data[i + 3] = 0;
           }
           // Light green background (204,255,204) with tolerance
-          else if (Math.abs(r - 204) <= 3 && Math.abs(g - 255) <= 3 && Math.abs(b - 204) <= 3) {
+          else if (
+            Math.abs(r - 204) <= 3 &&
+            Math.abs(g - 255) <= 3 &&
+            Math.abs(b - 204) <= 3
+          ) {
             data[i + 3] = 0;
           }
         }

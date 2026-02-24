@@ -32,9 +32,9 @@ export const SPRITE_ROWS = [
   { row: 7 }, // Black
 ];
 
-export const SPRITE_WIDTH = 24;  // cell width in the spritesheet
+export const SPRITE_WIDTH = 24; // cell width in the spritesheet
 export const SPRITE_HEIGHT = 32; // cell height in the spritesheet (row stride)
-export const SPRITE_SIZE = 24;   // kept for backward compat (width)
+export const SPRITE_SIZE = 24; // kept for backward compat (width)
 export const SPRITE_ZOOM = 3;
 export const SHEET_WIDTH = 456;
 export const SHEET_HEIGHT = 592;

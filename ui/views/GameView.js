@@ -487,9 +487,7 @@ export function GameView(options) {
       // Art extends to the very bottom of the cell, so sprite bottom = cell bottom.
       const extraW = targetW - displayedCell;
       const wrapperLeft = Math.round(p.x * displayedCell - extraW / 2);
-      const wrapperTop = Math.round(
-        (p.y + 1) * displayedCell - targetH
-      );
+      const wrapperTop = Math.round((p.y + 1) * displayedCell - targetH);
 
       // ✅ Invincibility flashing effect
       const now = Date.now();

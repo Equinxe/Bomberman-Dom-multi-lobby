@@ -17,10 +17,10 @@ const PREVIEW_ZOOM = 5;
 //   x = 8..23 (16px wide), y = 13..31 (19px tall)
 // We use a slightly larger crop (4px left pad, 20px wide) to avoid
 // sub-pixel clipping at the edges when the browser scales up.
-const ART_LEFT_PAD = 4;    // px of empty space left of visible window
-const ART_TOP_PAD = 13;    // px of empty space above art in each cell
-const ART_WIDTH = 20;      // px visible width (includes 4px left safety + all art)
-const ART_HEIGHT = 19;     // px of actual art height
+const ART_LEFT_PAD = 4; // px of empty space left of visible window
+const ART_TOP_PAD = 13; // px of empty space above art in each cell
+const ART_WIDTH = 20; // px visible width (includes 4px left safety + all art)
+const ART_HEIGHT = 19; // px of actual art height
 
 export function PlayerPreview({ colorIdx, uniqueId, zoom = PREVIEW_ZOOM }) {
   const framesCount = 3;

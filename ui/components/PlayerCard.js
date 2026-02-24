@@ -23,7 +23,7 @@ export function PlayerCard({
   const uniquePreviewId = `${index}_${colorToUse}_${player.id || ""}`;
 
   // Preview display dimensions at lobby zoom (cropped to art region)
-  const previewW = ART_WIDTH * PREVIEW_ZOOM;  // 100px
+  const previewW = ART_WIDTH * PREVIEW_ZOOM; // 100px
   const previewH = ART_HEIGHT * PREVIEW_ZOOM; // 95px
 
   // Player color for accent
@@ -226,7 +226,8 @@ export function PlayerCard({
                     };
                     letter-spacing: 1px;
                   `,
-                  class: "lobby-ready-btn" + (player && player.ready ? " anim" : ""),
+                  class:
+                    "lobby-ready-btn" + (player && player.ready ? " anim" : ""),
                 },
                 events: { click: "handleReady" },
                 children: [player && player.ready ? "Annuler" : "Prêt"],

@@ -128,7 +128,13 @@ export function resolveCollision(
  * ✅ Check if position collides with bombs (using hitbox collision)
  * The bomb blocks the entire cell, but only if the player is not marked as "inside"
  */
-export function checkBombCollision(lobby, playerId, x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
+export function checkBombCollision(
+  lobby,
+  playerId,
+  x,
+  y,
+  hitboxSize = PLAYER_HITBOX_SIZE,
+) {
   if (!lobby.bombs) return false;
 
   // Get player's hitbox

@@ -414,8 +414,14 @@ function startPlayerMoveInterval(lobby, player) {
     // Safety clamping
     // Safety clamping based on hitbox
     const clampOffset = (1 - HITBOX_SIZE) / 2;
-    player.x = Math.max(clampOffset, Math.min(cols - 1 + clampOffset, player.x));
-    player.y = Math.max(clampOffset, Math.min(rows - 1 + clampOffset, player.y));
+    player.x = Math.max(
+      clampOffset,
+      Math.min(cols - 1 + clampOffset, player.x),
+    );
+    player.y = Math.max(
+      clampOffset,
+      Math.min(rows - 1 + clampOffset, player.y),
+    );
 
     // ✅ Update bomb player tracking
     updateBombPlayerTracking(lobby, player.id, player.x, player.y);

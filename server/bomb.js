@@ -1,6 +1,10 @@
 // server/bomb.js
 // Bomb logic for the game server
-import { POWERUP_TYPE_KEYS, POWERUP_DROP_CHANCE, PLAYER_HITBOX_SIZE } from "../shared/constants.js";
+import {
+  POWERUP_TYPE_KEYS,
+  POWERUP_DROP_CHANCE,
+  PLAYER_HITBOX_SIZE,
+} from "../shared/constants.js";
 
 // ============= SKULL CURSE DEFINITIONS =============
 const SKULL_EFFECTS = [
