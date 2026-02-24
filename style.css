@@ -253,3 +253,35 @@ body::-webkit-scrollbar-thumb {
   will-change: opacity;
   contain: layout style;
 }
+
+/* ✅ Spectator overlay fade-in animation */
+@keyframes spectator-fade-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+#spectator-overlay-wrapper {
+  will-change: opacity;
+}
+
+/* ✅ In-game chat styling */
+#game-chat-root {
+  contain: layout style;
+}
+
+#game-chat-input:focus {
+  border-bottom: 2px solid rgba(69,255,192,0.6) !important;
+  background: rgba(20,32,24,0.98) !important;
+}
+
+/* ✅ Smooth scrollbar for in-game chat */
+[data-game-chat-list]::-webkit-scrollbar {
+  width: 4px;
+}
+[data-game-chat-list]::-webkit-scrollbar-thumb {
+  background: rgba(69,255,192,0.3);
+  border-radius: 2px;
+}
+[data-game-chat-list]::-webkit-scrollbar-track {
+  background: transparent;
+}

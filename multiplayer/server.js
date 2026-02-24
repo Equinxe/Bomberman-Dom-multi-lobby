@@ -115,6 +115,7 @@ function ensureLobby(code) {
       lobby.state = "in-game";
       lobby.bombs = []; // ✅ Reset bombs on game start
       lobby.powerUps = []; // ✅ Reset power-ups on game start
+      lobby.gameChat = []; // ✅ Reset in-game chat on game start
       lobby._gameWinBroadcasted = false; // ✅ Reset win flag for new game
 
       try {
@@ -611,6 +612,33 @@ wss.on("connection", (ws) => {
         queue: lobby.queue.map((q) => q.pseudo),
         code,
       });
+      return;
+    }
+
+    // ✅ In-game chat — works for alive AND dead (spectator) players
+    if (data.type === "gameChat") {
+      const code = ws.lobbyCode;
+      const lobby = lobbys[code];
+      if (!lobby || lobby.state !== "in-game") return;
+      const p = lobby.players.find((p) => p.id === id);
+      if (!p) return;
+      const text = (data.text || "").trim().slice(0, 120);
+      if (!text) return;
+
+      const msg = {
+        author: p.pseudo,
+        text,
+        time: now(),
+        spectator: !!p.dead, // ✅ Tag spectator messages so clients can display 👻
+      };
+
+      // Store in lobby for late-joining spectators
+      if (!lobby.gameChat) lobby.gameChat = [];
+      lobby.gameChat.push(msg);
+      // Cap at 100 messages
+      if (lobby.gameChat.length > 100) lobby.gameChat.shift();
+
+      broadcast(code, { type: "gameChat", message: msg });
       return;
     }
 

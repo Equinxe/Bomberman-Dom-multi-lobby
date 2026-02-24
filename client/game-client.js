@@ -4,6 +4,8 @@
 import { render } from "../Core/dom.js";
 import { GameView } from "../ui/views/GameView.js";
 import { HUD } from "../ui/components/Hud.js";
+import { GameChat } from "../ui/components/GameChat.js";
+import { SpectatorOverlay } from "../ui/components/SpectatorOverlay.js";
 import { generateMapFromSeed } from "../shared/map-generator.js";
 
 export function attachClientGame(socket, container, opts = {}) {
@@ -37,6 +39,10 @@ export function attachClientGame(socket, container, opts = {}) {
   let endTimerInterval = null;
   let score = 0;
   let highscore = null;
+
+  // ✅ In-game chat state
+  let gameChatMessages = [];
+  let gameChatOpen = false; // Whether the chat input is focused
 
   const playerScale =
     typeof opts.playerScale === "number" ? opts.playerScale : undefined;
@@ -215,11 +221,23 @@ export function attachClientGame(socket, container, opts = {}) {
     if (!inputEnabled) return;
     if (isTypingInFormElement(ev.target)) return;
 
-    // ✅ Block input if local player is dead
+    const key = (ev.key || "").toLowerCase();
+
+    // ✅ Enter key: focus the in-game chat input (works for alive AND dead players)
+    if (key === "enter") {
+      const chatInput = document.getElementById("game-chat-input");
+      if (chatInput) {
+        ev.preventDefault();
+        chatInput.focus();
+        gameChatOpen = true;
+      }
+      return;
+    }
+
+    // ✅ Block movement/action input if local player is dead (but chat still works above)
     const localPlayer = players.find((p) => p.id === localPlayerId);
     if (localPlayer && localPlayer.dead) return;
 
-    const key = (ev.key || "").toLowerCase();
     let changed = false;
     if (key === "arrowleft" || key === "a" || key === "q") {
       if (!inputState.left) changed = true;
@@ -345,7 +363,12 @@ export function attachClientGame(socket, container, opts = {}) {
       destroyingBlocks = [];
       powerUps = [];
       pickupFlashes = [];
+      gameChatMessages = [];
+      gameChatOpen = false;
       gameWinner = null;
+
+      // ✅ Remove any leftover spectator overlay from previous game
+      removeSpectatorOverlay();
 
       score = 0;
       highscore = payload.highscore ?? highscore;
@@ -812,10 +835,106 @@ export function attachClientGame(socket, container, opts = {}) {
         }
         return p;
       });
+
+      // ✅ If local player died, show spectator overlay
+      if (msg.playerId === localPlayerId) {
+        showSpectatorOverlay();
+      }
     } catch (e) {
       console.error("playerDeath handler error", e, msg);
     }
   });
+
+  // ✅ In-game chat handler — receives messages from alive and dead players
+  safeOn("gameChat", (msg) => {
+    try {
+      if (!msg || !msg.message) return;
+      gameChatMessages.push(msg.message);
+      // Cap at 100 client-side
+      if (gameChatMessages.length > 100) gameChatMessages.shift();
+      // Auto-scroll chat
+      requestAnimationFrame(() => {
+        const chatList = document.querySelector("[data-game-chat-list]");
+        if (chatList) chatList.scrollTop = chatList.scrollHeight;
+      });
+    } catch (e) {
+      console.error("gameChat handler error", e, msg);
+    }
+  });
+
+  // ✅ Send in-game chat message
+  function sendGameChat(text) {
+    const trimmed = (text || "").trim().slice(0, 120);
+    if (!trimmed) return;
+    try {
+      socket &&
+        typeof socket.send === "function" &&
+        socket.send("gameChat", { text: trimmed });
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // ✅ Handle in-game chat form submission
+  function handleGameChatSubmit(ev) {
+    ev.preventDefault();
+    const input = document.getElementById("game-chat-input");
+    if (!input) return;
+    sendGameChat(input.value);
+    input.value = "";
+    input.blur();
+    gameChatOpen = false;
+  }
+
+  // ✅ Spectator overlay — persistent DOM element (not in render loop)
+  let _spectatorOverlayEl = null;
+  function showSpectatorOverlay() {
+    removeSpectatorOverlay();
+    const vnode = SpectatorOverlay({ pseudo: localPseudo || "" });
+    // We need to build DOM from the vnode manually since it's outside the render loop
+    const el = document.createElement("div");
+    el.id = "spectator-overlay-wrapper";
+    el.innerHTML = ""; // will be populated by render
+    document.body.appendChild(el);
+    _spectatorOverlayEl = el;
+
+    // Use the framework's render to build the spectator overlay
+    try {
+      render(vnode, el, {});
+    } catch (e) {
+      // Fallback: simple HTML
+      el.innerHTML = `
+        <div style="position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10040;
+          font-family:'Press Start 2P',monospace;text-align:center;pointer-events:none;">
+          <div style="background:rgba(80,20,20,0.92);border:2px solid rgba(255,80,80,0.6);
+            border-radius:12px;padding:10px 24px;box-shadow:0 4px 24px rgba(255,60,60,0.3);">
+            <div style="font-size:14px;color:#ff6b6b;margin-bottom:4px;">☠ ÉLIMINÉ</div>
+            <div style="font-size:8px;color:#ffaa88;">Mode spectateur — Entrée pour discuter</div>
+          </div>
+          <div style="margin-top:6px;font-size:8px;color:#ff9944;background:rgba(255,153,68,0.15);
+            border:1px solid rgba(255,153,68,0.5);border-radius:8px;padding:4px 14px;display:inline-flex;
+            align-items:center;gap:6px;">👻 MODE SPECTATEUR</div>
+        </div>`;
+    }
+
+    // Fade in animation
+    el.style.opacity = "0";
+    el.style.transition = "opacity 0.5s ease";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (el) el.style.opacity = "1";
+      });
+    });
+  }
+
+  function removeSpectatorOverlay() {
+    if (_spectatorOverlayEl) {
+      _spectatorOverlayEl.remove();
+      _spectatorOverlayEl = null;
+    }
+    const old = document.getElementById("spectator-overlay-wrapper");
+    if (old) old.remove();
+  }
 
   // ✅ Game win handler — creates a persistent overlay (not in the render loop)
   let _winOverlayEl = null;
@@ -997,6 +1116,15 @@ export function attachClientGame(socket, container, opts = {}) {
         localPlayerId,
       });
 
+      // ✅ In-game chat component (always visible — alive players and spectators)
+      const localPlayer = players.find((p) => p.id === localPlayerId);
+      const isSpectator = !!(localPlayer && localPlayer.dead);
+      const gameChatVNode = GameChat({
+        messages: gameChatMessages,
+        nickname: localPseudo || "",
+        isSpectator,
+      });
+
       try {
         render(
           {
@@ -1005,10 +1133,10 @@ export function attachClientGame(socket, container, opts = {}) {
               style:
                 "display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding-top:60px;padding-bottom:40px;box-sizing:border-box;",
             },
-            children: [gameVNode, hudVNode],
+            children: [gameVNode, hudVNode, gameChatVNode],
           },
           container,
-          {},
+          { handleGameChatSend: handleGameChatSubmit },
         );
       } catch (e) {
         console.error("render failed:", e, { map, players });
@@ -1037,11 +1165,14 @@ export function attachClientGame(socket, container, opts = {}) {
         clearCountdown();
         clearEndTimer();
         removeWinOverlay(); // ✅ Remove persistent win overlay from document.body
+        removeSpectatorOverlay(); // ✅ Remove spectator overlay
         bombs = [];
         explosions = [];
         destroyingBlocks = [];
         powerUps = [];
         pickupFlashes = [];
+        gameChatMessages = [];
+        gameChatOpen = false;
         gameWinner = null;
       } catch (e) {}
       started = false;

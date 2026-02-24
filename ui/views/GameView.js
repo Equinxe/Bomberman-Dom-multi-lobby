@@ -429,12 +429,15 @@ export function GameView(options) {
   const playersWithPos = (players || []).map((p) => ({ ...p }));
   const playerNodes = playersWithPos
     .filter((p) => {
-      if (p.dead) return false; // Don't render dead players
+      // ✅ BONUS: Dead players rendered as ghosts (visible only to themselves as spectator)
+      // Other players see a brief ghost then nothing
+      if (p.dead && p.id !== localPlayerId) return false;
       // ✅ Skull "invisible" effect: hide from other players, show translucent to self
       if (p.invisible && p.id !== localPlayerId) return false;
       return true;
     })
     .map((p) => {
+      const isDead = !!p.dead;
       const colorIdx = typeof p.color === "number" ? p.color : 0;
       const spriteRow =
         (SPRITE_ROWS && SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].row) ||
@@ -498,7 +501,11 @@ export function GameView(options) {
       let playerEffectStyle = "";
       let playerFilter = "";
 
-      if (isVest) {
+      // ✅ BONUS: Ghost rendering for dead local player (spectator mode)
+      if (isDead) {
+        playerEffectStyle = `opacity: 0.25;`;
+        playerFilter = `grayscale(0.8) brightness(1.5)`;
+      } else if (isVest) {
         // ✅ Vest: golden flash — faster in last 2 seconds as warning
         const vestTimeLeft = (p.vestUntil || 0) - now;
         const vestExpiring = vestTimeLeft > 0 && vestTimeLeft <= 2000;
@@ -545,8 +552,8 @@ export function GameView(options) {
       const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
 
       // ✅ Player name tag above sprite with status icons
-      const statusPrefix = isVest ? "🛡️" : isSkullCursed ? "💀" : "";
-      const nameColor = isVest ? "#ffdd44" : isSkullCursed ? "#cc66ff" : "#fff";
+      const statusPrefix = isDead ? "👻" : isVest ? "🛡️" : isSkullCursed ? "💀" : "";
+      const nameColor = isDead ? "#ff9944" : isVest ? "#ffdd44" : isSkullCursed ? "#cc66ff" : "#fff";
       const nameTag = {
         tag: "div",
         attrs: {

@@ -79,6 +79,7 @@ function spawnDeathPowerUp(lobby, player, broadcastFunc) {
     x: dropX,
     y: dropY,
     type: typeKey,
+    fromDeath: true, // ✅ Flag so the same explosion doesn't immediately destroy it
   };
   lobby.powerUps.push(powerUp);
   broadcastFunc("powerUpSpawned", { powerUps: [powerUp] });
@@ -680,6 +681,19 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
           playerId: player.id,
           pseudo: player.pseudo,
         });
+
+        // ✅ In-game chat system message for death
+        broadcastFunc("gameChat", {
+          message: {
+            system: true,
+            text: `☠ ${player.pseudo} a été éliminé !`,
+            time: new Date().toLocaleTimeString("fr-FR", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          },
+        });
       }
     }
   });
@@ -700,6 +714,22 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
       winnerId: winner ? winner.id : null,
       winnerPseudo: winner ? winner.pseudo : null,
     });
+
+    // ✅ In-game chat system message for game end
+    const winText = winner
+      ? `🏆 ${winner.pseudo} remporte la victoire !`
+      : `🤝 Match nul — aucun vainqueur !`;
+    broadcastFunc("gameChat", {
+      message: {
+        system: true,
+        text: winText,
+        time: new Date().toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      },
+    });
   }
 
   // Broadcast explosion event
@@ -718,9 +748,16 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
   });
 
   // ✅ Destroy power-ups caught in the explosion
+  // Skip power-ups dropped by a player who died in THIS explosion (fromDeath flag)
   if (lobby.powerUps && lobby.powerUps.length > 0) {
     const destroyedPowerUps = [];
     lobby.powerUps = lobby.powerUps.filter((pu) => {
+      // ✅ Don't destroy death-drop power-ups in the same explosion that killed the player
+      if (pu.fromDeath) {
+        // Clear the flag so future explosions CAN destroy it
+        delete pu.fromDeath;
+        return true;
+      }
       const hit = explosionCells.some(
         (cell) => cell.x === pu.x && cell.y === pu.y,
       );
