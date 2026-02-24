@@ -1,4 +1,3 @@
-// shared/constants.js
 // Constants shared between server and client to avoid duplication.
 
 // Power-up types that can drop from blocks (gameplay-relevant ones)
