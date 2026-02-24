@@ -1,4 +1,4 @@
-import { PLAYER_COLORS } from "./../helpers/constants.js";
+import { PLAYER_COLORS, TEAM_INFO } from "./../helpers/constants.js";
 
 export function HUD({
   score = 0,
@@ -350,6 +350,8 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
   const isDead = !!p.dead;
   const isLocal = p.id === localPlayerId;
   const initials = (p.pseudo || `J${index + 1}`).slice(0, 3).toUpperCase();
+  const playerTeam = p.team || 0;
+  const teamInfo = TEAM_INFO[playerTeam] || TEAM_INFO[0];
 
   // Hearts display (max 5, show up to the max of lives or 3)
   const maxHearts = Math.max(3, Math.min(lives, 5));
@@ -400,6 +402,7 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
             font-weight: bold;
             flex-shrink: 0;
             ${isDead ? "" : `box-shadow: 0 0 6px ${color}66;`}
+            ${playerTeam !== 0 ? `border: 2px solid ${teamInfo.color};` : ""}
           `,
         },
         children: [
@@ -416,9 +419,23 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
           {
             tag: "div",
             attrs: {
-              style: `font-size: 7px; color: ${isDead ? "#666" : "#cfeedd"}; letter-spacing: 1px; white-space: nowrap; ${isDead ? "text-decoration: line-through;" : ""}`,
+              style: `font-size: 7px; color: ${isDead ? "#666" : "#cfeedd"}; letter-spacing: 1px; white-space: nowrap; display:flex; align-items:center; gap:3px; ${isDead ? "text-decoration: line-through;" : ""}`,
             },
-            children: [initials],
+            children: [
+              // ✅ Team label badge
+              ...(playerTeam !== 0
+                ? [
+                    {
+                      tag: "span",
+                      attrs: {
+                        style: `font-size:6px; color:${teamInfo.color}; background:${teamInfo.color}22; border:1px solid ${teamInfo.color}55; border-radius:3px; padding:0 3px;`,
+                      },
+                      children: [teamInfo.label],
+                    },
+                  ]
+                : []),
+              initials,
+            ],
           },
           {
             tag: "div",

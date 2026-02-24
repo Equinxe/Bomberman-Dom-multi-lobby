@@ -1,6 +1,11 @@
 import { PlayerPreview } from "./PlayerPreview.js";
 import { ColorSelector } from "./ColorSelector.js";
-import { PLAYER_COLORS } from "./../helpers/constants.js";
+import { TeamSelector } from "./TeamSelector.js";
+import {
+  PLAYER_COLORS,
+  TEAM_INFO,
+  GAME_MODES,
+} from "./../helpers/constants.js";
 
 // Preview zoom used in both PlayerPreview and this card's container
 const PREVIEW_ZOOM = 5;
@@ -18,6 +23,8 @@ export function PlayerCard({
   myIndex,
   takenColors,
   nickname,
+  gameMode,
+  teamCounts,
 }) {
   const colorToUse = player.color;
   const uniquePreviewId = `${index}_${colorToUse}_${player.id || ""}`;
@@ -97,6 +104,28 @@ export function PlayerCard({
         },
         children: [player.pseudo || "En attente..."],
       },
+      // ✅ Team badge (shows team assignment for all non-empty players)
+      !player.empty && (player.team || 0) !== 0
+        ? {
+            tag: "div",
+            attrs: {
+              style: `
+                font-size: 8px;
+                padding: 2px 10px;
+                border-radius: 6px;
+                background: ${(TEAM_INFO[player.team] || TEAM_INFO[0]).color}22;
+                border: 1px solid ${(TEAM_INFO[player.team] || TEAM_INFO[0]).color}88;
+                color: ${(TEAM_INFO[player.team] || TEAM_INFO[0]).color};
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                margin-bottom: 2px;
+              `,
+            },
+            children: [
+              `${(TEAM_INFO[player.team] || TEAM_INFO[0]).label} ${(TEAM_INFO[player.team] || TEAM_INFO[0]).name}`,
+            ],
+          }
+        : null,
       // Player content: sprite + color selector
       !player.empty
         ? {
@@ -176,6 +205,16 @@ export function PlayerCard({
                       },
                     },
                   ]),
+              // ✅ Team selector (only for local player, only in team mode)
+              ...(isMe && gameMode === GAME_MODES.TEAM
+                ? [
+                    TeamSelector({
+                      selectedTeam: player.team || 0,
+                      teamCounts: teamCounts || {},
+                      disabled: false,
+                    }),
+                  ]
+                : []),
             ],
           }
         : // Empty slot placeholder

@@ -4,6 +4,8 @@ import {
   POWERUP_TYPE_KEYS,
   POWERUP_DROP_CHANCE,
   PLAYER_HITBOX_SIZE,
+  TEAMS,
+  TEAM_INFO,
 } from "../shared/constants.js";
 
 // ============= SKULL CURSE DEFINITIONS =============
@@ -604,9 +606,24 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
   const now = Date.now();
   const explosionHitbox = PLAYER_HITBOX_SIZE;
 
+  // ✅ Find bomb owner for friendly fire check
+  const bombOwner = lobby.players.find((p) => p.id === bomb.playerId);
+  const bombOwnerTeam = bombOwner ? bombOwner.team || 0 : 0;
+
   lobby.players.forEach((player) => {
     // Skip dead players
     if (player.dead) return;
+
+    // ✅ TEAM MODE: Skip teammates (friendly fire protection)
+    // Only applies when the bomb owner has a team (non-zero) and player is on the same team
+    // The bomb owner can still hurt themselves — only *other* teammates are protected
+    if (
+      bombOwnerTeam !== TEAMS.NONE &&
+      (player.team || 0) === bombOwnerTeam &&
+      player.id !== bomb.playerId
+    ) {
+      return; // Teammates are immune to each other's bombs
+    }
 
     // Skip invincible players
     if (player.invincibleUntil && now < player.invincibleUntil) {
@@ -698,38 +715,101 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
     }
   });
 
-  // Check win condition: last player standing (only fire once per game)
+  // Check win condition: last player/team standing (only fire once per game)
   const alivePlayers = lobby.players.filter((p) => !p.dead);
-  if (
-    lobby.players.length > 1 &&
-    alivePlayers.length <= 1 &&
-    !lobby._gameWinBroadcasted
-  ) {
-    lobby._gameWinBroadcasted = true; // ✅ Prevent repeated gameWin broadcasts
-    const winner = alivePlayers[0] || null;
-    console.log(
-      `[bomb] Game over! Winner: ${winner ? winner.pseudo : "nobody"}`,
-    );
-    broadcastFunc("gameWin", {
-      winnerId: winner ? winner.id : null,
-      winnerPseudo: winner ? winner.pseudo : null,
-    });
 
-    // ✅ In-game chat system message for game end
-    const winText = winner
-      ? `🏆 ${winner.pseudo} remporte la victoire !`
-      : `🤝 Match nul — aucun vainqueur !`;
-    broadcastFunc("gameChat", {
-      message: {
-        system: true,
-        text: winText,
-        time: new Date().toLocaleTimeString("fr-FR", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      },
-    });
+  // ✅ Determine if team mode is active (at least 2 players have a non-zero team)
+  const teamPlayers = lobby.players.filter((p) => (p.team || 0) !== TEAMS.NONE);
+  const isTeamMode = teamPlayers.length >= 2;
+
+  if (lobby.players.length > 1 && !lobby._gameWinBroadcasted) {
+    let shouldEndGame = false;
+    let winPayload = {};
+
+    if (isTeamMode) {
+      // TEAM MODE: check if all alive players belong to the same team
+      const aliveTeams = new Set(
+        alivePlayers.map((p) => p.team || 0).filter((t) => t !== TEAMS.NONE),
+      );
+      const aliveFFA = alivePlayers.filter((p) => (p.team || 0) === TEAMS.NONE);
+
+      if (alivePlayers.length === 0) {
+        // Everyone dead — draw
+        shouldEndGame = true;
+        winPayload = { winnerId: null, winnerPseudo: null, winningTeam: null };
+      } else if (aliveTeams.size === 1 && aliveFFA.length === 0) {
+        // One team remains (no FFA players alive)
+        const winTeam = [...aliveTeams][0];
+        shouldEndGame = true;
+        winPayload = {
+          winnerId: null,
+          winnerPseudo: null,
+          winningTeam: winTeam,
+        };
+      } else if (aliveTeams.size === 0 && aliveFFA.length === 1) {
+        // One FFA player left, no team players alive
+        shouldEndGame = true;
+        winPayload = {
+          winnerId: aliveFFA[0].id,
+          winnerPseudo: aliveFFA[0].pseudo,
+          winningTeam: null,
+        };
+      } else if (alivePlayers.length === 1) {
+        // Exactly one person alive (regardless of team)
+        shouldEndGame = true;
+        winPayload = {
+          winnerId: alivePlayers[0].id,
+          winnerPseudo: alivePlayers[0].pseudo,
+          winningTeam: alivePlayers[0].team || null,
+        };
+      }
+    } else {
+      // FFA MODE: last player standing
+      if (alivePlayers.length <= 1) {
+        shouldEndGame = true;
+        const winner = alivePlayers[0] || null;
+        winPayload = {
+          winnerId: winner ? winner.id : null,
+          winnerPseudo: winner ? winner.pseudo : null,
+          winningTeam: null,
+        };
+      }
+    }
+
+    if (shouldEndGame) {
+      lobby._gameWinBroadcasted = true;
+      const winner = winPayload.winnerId
+        ? lobby.players.find((p) => p.id === winPayload.winnerId)
+        : null;
+      console.log(
+        `[bomb] Game over! Winner: ${winner ? winner.pseudo : winPayload.winningTeam ? `Team ${winPayload.winningTeam}` : "nobody"}`,
+      );
+      broadcastFunc("gameWin", winPayload);
+
+      // ✅ In-game chat system message for game end
+      let winText;
+      if (winPayload.winningTeam) {
+        const teamName =
+          TEAM_INFO[winPayload.winningTeam]?.name ||
+          `Équipe ${winPayload.winningTeam}`;
+        winText = `🏆 L'équipe ${teamName} remporte la victoire !`;
+      } else if (winner) {
+        winText = `🏆 ${winner.pseudo} remporte la victoire !`;
+      } else {
+        winText = `🤝 Match nul — aucun vainqueur !`;
+      }
+      broadcastFunc("gameChat", {
+        message: {
+          system: true,
+          text: winText,
+          time: new Date().toLocaleTimeString("fr-FR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        },
+      });
+    }
   }
 
   // Broadcast explosion event

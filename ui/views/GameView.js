@@ -17,6 +17,7 @@ import {
   EXPLOSION_SPRITES,
   POWERUP_SPRITE,
   POWERUP_TYPES,
+  TEAM_INFO,
 } from "./../helpers/constants.js";
 import {
   isSolidCell,
@@ -552,14 +553,31 @@ export function GameView(options) {
       const innerStyle = `position:relative; left:${imgOffsetX}px; top:${imgOffsetY}px; width:${imgWidth}px; height:${imgHeight}px; image-rendering: pixelated; display:block; pointer-events:none; border: none;`;
 
       // ✅ Player name tag above sprite with status icons
-      const statusPrefix = isDead ? "👻" : isVest ? "🛡️" : isSkullCursed ? "💀" : "";
-      const nameColor = isDead ? "#ff9944" : isVest ? "#ffdd44" : isSkullCursed ? "#cc66ff" : "#fff";
+      const playerTeam = p.team || 0;
+      const teamInfo = TEAM_INFO[playerTeam] || TEAM_INFO[0];
+      const teamPrefix = playerTeam !== 0 ? `${teamInfo.label} ` : "";
+      const statusPrefix = isDead
+        ? "👻"
+        : isVest
+          ? "🛡️"
+          : isSkullCursed
+            ? "💀"
+            : "";
+      const nameColor = isDead
+        ? "#ff9944"
+        : isVest
+          ? "#ffdd44"
+          : isSkullCursed
+            ? "#cc66ff"
+            : "#fff";
       const nameTag = {
         tag: "div",
         attrs: {
           style: `position:absolute; top:${-Math.round(displayedCell * 0.35)}px; left:50%; transform:translateX(-50%)${shouldMirror ? " scaleX(-1)" : ""}; font-family:'Press Start 2P',monospace; font-size:${Math.max(6, Math.round(displayedCell * 0.2))}px; color:${nameColor}; text-shadow:0 1px 2px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.5); white-space:nowrap; pointer-events:none; text-align:center; letter-spacing:0.5px;`,
         },
-        children: [`${statusPrefix}${(p.pseudo || "").slice(0, 6)}`],
+        children: [
+          `${teamPrefix}${statusPrefix}${(p.pseudo || "").slice(0, 6)}`,
+        ],
       };
 
       return {
@@ -587,7 +605,7 @@ export function GameView(options) {
               },
             ],
           },
-        ],
+        ].filter(Boolean),
       };
     });
 

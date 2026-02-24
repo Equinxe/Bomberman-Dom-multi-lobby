@@ -2,7 +2,11 @@
 // Compact in-game chat overlay — available to alive and dead (spectator) players.
 // Dead players get a "👻 Spectateur" badge next to their name.
 
-export function GameChat({ messages = [], nickname = "", isSpectator = false }) {
+export function GameChat({
+  messages = [],
+  nickname = "",
+  isSpectator = false,
+}) {
   const maxMessages = 30;
   const visibleMessages = messages.slice(-maxMessages);
 
@@ -113,9 +117,7 @@ export function GameChat({ messages = [], nickname = "", isSpectator = false }) 
                   `,
                   },
                   children: [
-                    isSystem
-                      ? msg.text
-                      : `${prefix}${msg.author}: ${msg.text}`,
+                    isSystem ? msg.text : `${prefix}${msg.author}: ${msg.text}`,
                   ],
                 };
               }),

@@ -58,6 +58,7 @@ export function attachClientGame(socket, container, opts = {}) {
     (typeof window !== "undefined" && window.__LOCAL_NICKNAME) || null;
   let localPlayerId = null;
   let gameWinner = null; // ✅ Track game winner
+  let gameMode = "ffa"; // ✅ Track game mode (ffa or team)
 
   // ✅ Update player animation based on input state
   function updatePlayerAnimation(player, inputState) {
@@ -385,6 +386,7 @@ export function attachClientGame(socket, container, opts = {}) {
       clearEndTimer();
       endTimer = null;
       started = true;
+      gameMode = payload.gameMode || "ffa"; // ✅ Store game mode
       localPseudo =
         payload.localPseudo ||
         localPseudo ||
@@ -528,6 +530,7 @@ export function attachClientGame(socket, container, opts = {}) {
             skullUntil:
               p.skullUntil !== undefined ? p.skullUntil : pl.skullUntil,
             invisible: p.invisible !== undefined ? p.invisible : pl.invisible,
+            team: p.team !== undefined ? p.team : pl.team,
           };
         }
         return pl;
@@ -940,33 +943,55 @@ export function attachClientGame(socket, container, opts = {}) {
   let _winOverlayEl = null;
   function showWinOverlay(winner) {
     removeWinOverlay();
-    const isDraw = !winner.id && !winner.pseudo;
-    const isLocalWinner = !isDraw && winner.id === localPlayerId;
+    const isDraw = !winner.id && !winner.pseudo && !winner.winningTeam;
+    const isTeamWin = !!winner.winningTeam;
+    const isLocalWinner = !isDraw && !isTeamWin && winner.id === localPlayerId;
+    // For team win, check if local player was on the winning team
+    const localPlayer = players.find((p) => p.id === localPlayerId);
+    const isLocalTeamWin =
+      isTeamWin &&
+      localPlayer &&
+      (localPlayer.team || 0) === winner.winningTeam;
+
     const borderColor = isDraw
       ? "#ffaa33"
-      : isLocalWinner
+      : isLocalWinner || isLocalTeamWin
         ? "#3be6aa"
         : "#ff5555";
     const glowColor = isDraw
       ? "rgba(255,170,50,0.4)"
-      : isLocalWinner
+      : isLocalWinner || isLocalTeamWin
         ? "rgba(59,230,170,0.5)"
         : "rgba(255,85,85,0.4)";
     const textColor = isDraw
       ? "#ffaa33"
-      : isLocalWinner
+      : isLocalWinner || isLocalTeamWin
         ? "#3be6aa"
         : "#ff5555";
-    const titleText = isDraw
-      ? "⏰ DRAW!"
-      : isLocalWinner
-        ? "\uD83C\uDFC6 VICTORY! \uD83C\uDFC6"
+
+    let titleText, subText;
+    if (isDraw) {
+      titleText = "⏰ DRAW!";
+      subText = "Time's up \u2014 nobody wins!";
+    } else if (isTeamWin) {
+      // Import team info dynamically for display
+      const teamNames = { 1: "Alpha", 2: "Beta" };
+      const teamLabels = { 1: "α", 2: "β" };
+      const teamName =
+        teamNames[winner.winningTeam] || `Team ${winner.winningTeam}`;
+      titleText = isLocalTeamWin
+        ? "\uD83C\uDFC6 TEAM VICTORY! \uD83C\uDFC6"
         : "GAME OVER";
-    const subText = isDraw
-      ? "Time's up \u2014 nobody wins!"
-      : winner.pseudo
+      subText = `Team ${teamName} (${teamLabels[winner.winningTeam] || "?"}) wins!`;
+    } else if (isLocalWinner) {
+      titleText = "\uD83C\uDFC6 VICTORY! \uD83C\uDFC6";
+      subText = winner.pseudo ? `${winner.pseudo} wins!` : "You win!";
+    } else {
+      titleText = "GAME OVER";
+      subText = winner.pseudo
         ? `${winner.pseudo} wins!`
         : "Draw \u2014 no winner!";
+    }
 
     const overlay = document.createElement("div");
     overlay.id = "game-win-overlay";
@@ -1028,10 +1053,14 @@ export function attachClientGame(socket, container, opts = {}) {
   safeOn("gameWin", (msg) => {
     try {
       if (!msg) return;
-      console.log("[client] Game won by:", msg.winnerPseudo || "nobody");
+      console.log(
+        "[client] Game won by:",
+        msg.winnerPseudo || msg.winningTeam || "nobody",
+      );
       gameWinner = {
         id: msg.winnerId,
         pseudo: msg.winnerPseudo,
+        winningTeam: msg.winningTeam || null,
       };
       clearCountdown();
       if (endTimer == null) startEndTimer();
@@ -1103,6 +1132,7 @@ export function attachClientGame(socket, container, opts = {}) {
         showCollisionOverlays: opts.showCollisionOverlays !== false,
         collisionColors: opts.collisionColors || undefined,
         localPlayerId,
+        gameMode, // ✅ Pass game mode
       });
 
       const hudVNode = HUD({
@@ -1114,6 +1144,7 @@ export function attachClientGame(socket, container, opts = {}) {
         players,
         gameWinner,
         localPlayerId,
+        gameMode, // ✅ Pass game mode
       });
 
       // ✅ In-game chat component (always visible — alive players and spectators)

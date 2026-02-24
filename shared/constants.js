@@ -38,3 +38,50 @@ export const MAP_ROWS = 13;
 // Player hitbox size (fraction of a cell)
 // Art is ~16px wide in a 24px cell = 0.67, but use slightly smaller for forgiving gameplay
 export const PLAYER_HITBOX_SIZE = 0.5;
+
+// ========== TEAM MODE (2v2) ==========
+export const TEAMS = {
+  NONE: 0, // Free-for-all (no team)
+  ALPHA: 1, // Team Alpha (blue)
+  BETA: 2, // Team Beta (red)
+};
+
+export const TEAM_INFO = {
+  [0]: { name: "—", label: "FFA", color: "#888", glow: "transparent" },
+  [1]: {
+    name: "Alpha",
+    label: "α",
+    color: "#4d9fff",
+    glow: "rgba(77,159,255,0.5)",
+  },
+  [2]: {
+    name: "Beta",
+    label: "β",
+    color: "#ff6b6b",
+    glow: "rgba(255,107,107,0.5)",
+  },
+};
+
+// Maximum players per team
+export const TEAM_MAX_PLAYERS = 2;
+
+// ========== GAME MODES ==========
+export const GAME_MODES = {
+  FFA: "ffa", // Free-for-all (default)
+  TEAM: "team", // 2v2 Team mode
+};
+
+export const GAME_MODE_INFO = {
+  ffa: {
+    name: "Free for All",
+    short: "FFA",
+    icon: "⚔",
+    description: "Chacun pour soi",
+  },
+  team: {
+    name: "Équipe 2v2",
+    short: "2v2",
+    icon: "🤝",
+    description: "2 équipes de 2",
+  },
+};

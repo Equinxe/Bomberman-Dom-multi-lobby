@@ -37,6 +37,7 @@ export function startGameForLobby(
     mapSeed,
     map: opts.mapGrid ?? null, // ✅ Full grid from server
     mapOptions: opts.mapOptions ?? { destructibleProb: 0.42 },
+    gameMode: opts.gameMode ?? "ffa", // ✅ Include game mode
   };
 
   // Notify clients in the lobby: broadcastFunc is expected to attach the "type" wrapper

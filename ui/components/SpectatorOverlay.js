@@ -76,7 +76,11 @@ export function SpectatorOverlay({ pseudo = "", killedBy = null }) {
           `,
         },
         children: [
-          { tag: "span", attrs: { style: "font-size:12px;" }, children: ["👻"] },
+          {
+            tag: "span",
+            attrs: { style: "font-size:12px;" },
+            children: ["👻"],
+          },
           { tag: "span", children: ["MODE SPECTATEUR"] },
         ],
       },

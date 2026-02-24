@@ -26,6 +26,7 @@ export function createElement(vnode, eventsMap = {}) {
     }
   }
   for (let child of children) {
+    if (child == null) continue; // skip null/undefined children safely
     el.appendChild(createElement(child, eventsMap));
   }
   // Store vnode reference for diffing
@@ -128,9 +129,9 @@ function patchElement(el, oldVNode, newVNode, eventsMap) {
     }
   }
 
-  // Patch children
-  const oldChildren = oldVNode.children || [];
-  const newChildren = newVNode.children || [];
+  // Patch children (filter null/undefined for safety)
+  const oldChildren = (oldVNode.children || []).filter((c) => c != null);
+  const newChildren = (newVNode.children || []).filter((c) => c != null);
   const maxLen = Math.max(oldChildren.length, newChildren.length);
   const domChildren = el.childNodes;
 

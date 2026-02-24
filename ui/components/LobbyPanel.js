@@ -1,4 +1,6 @@
 import { PlayerCard } from "./PlayerCard.js";
+import { LobbySettings } from "./LobbySettings.js";
+import { TEAMS, GAME_MODES } from "../helpers/constants.js";
 
 // Small ProgressBar helper
 export function ProgressBar({ percent }) {
@@ -39,6 +41,8 @@ export function LobbyPanel({
   waiting,
   progressPercent,
   myNickname,
+  gameMode,
+  owner,
 }) {
   const defaultColors = [0, 1, 2, 3, 4, 5];
   const fullPlayers = [...players];
@@ -50,10 +54,23 @@ export function LobbyPanel({
       empty: true,
     });
   const myIndex = players.findIndex((p) => p.pseudo === myNickname);
+  const myPlayer = myIndex >= 0 ? players[myIndex] : null;
+  const isOwner = !!(myPlayer && owner && myPlayer.id === owner);
 
   const takenColors = players
     .map((p) => (typeof p.color === "number" ? p.color : -1))
     .filter((c) => c >= 0);
+
+  const isTeamMode = gameMode === GAME_MODES.TEAM;
+
+  // Compute team counts for team badges
+  const teamCounts = {};
+  if (isTeamMode) {
+    players.forEach((p) => {
+      const t = p.team || 0;
+      teamCounts[t] = (teamCounts[t] || 0) + 1;
+    });
+  }
 
   return {
     tag: "div",
@@ -89,6 +106,28 @@ export function LobbyPanel({
         },
         children: [`Joueurs (${players.length}/4)`],
       },
+      // ✅ Game mode settings (owner can change, others see current mode)
+      LobbySettings({ gameMode, isOwner }),
+      // ✅ Team mode indicator (only in team mode)
+      isTeamMode
+        ? {
+            tag: "div",
+            attrs: {
+              style: `
+                font-size: 10px;
+                color: #ffaa33;
+                text-align: center;
+                letter-spacing: 2px;
+                padding: 3px 12px;
+                border-radius: 6px;
+                background: rgba(255,170,50,0.1);
+                border: 1px solid rgba(255,170,50,0.3);
+                margin-bottom: 2px;
+              `,
+            },
+            children: ["⚔ MODE ÉQUIPE (2v2)"],
+          }
+        : null,
       // Lobby code row
       {
         tag: "div",
@@ -168,6 +207,8 @@ export function LobbyPanel({
             myIndex,
             takenColors,
             nickname: myNickname,
+            gameMode,
+            teamCounts,
           });
         }),
       },

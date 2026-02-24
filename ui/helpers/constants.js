@@ -4,6 +4,11 @@ export {
   POWERUP_TYPE_KEYS,
   POWERUP_DROP_CHANCE,
   PLAYER_HITBOX_SIZE,
+  TEAMS,
+  TEAM_INFO,
+  TEAM_MAX_PLAYERS,
+  GAME_MODES,
+  GAME_MODE_INFO,
 } from "../../shared/constants.js";
 
 // PlayerTest.png layout (pixel-verified): 456×592, green background removed

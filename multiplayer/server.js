@@ -19,7 +19,13 @@ import {
   resetPlayerStats,
   getSpawnPosition,
 } from "../shared/player-defaults.js";
-import { PLAYER_HITBOX_SIZE } from "../shared/constants.js";
+import {
+  PLAYER_HITBOX_SIZE,
+  TEAMS,
+  TEAM_MAX_PLAYERS,
+  TEAM_INFO,
+  GAME_MODES,
+} from "../shared/constants.js";
 
 const wss = new WebSocketServer({ port: 9001 });
 
@@ -87,6 +93,21 @@ function broadcastPlayerCountAll() {
   });
 }
 
+/**
+ * Build the standard lobby broadcast payload with gameMode and owner info.
+ */
+function lobbyPayload(lobby) {
+  return {
+    type: "lobby",
+    players: lobby.players,
+    chat: lobby.chat,
+    queue: lobby.queue.map((q) => (typeof q === "string" ? q : q.pseudo)),
+    code: lobby.code,
+    gameMode: lobby.gameMode || GAME_MODES.FFA,
+    owner: lobby.owner || (lobby.players[0] && lobby.players[0].id) || null,
+  };
+}
+
 function ensureLobby(code) {
   if (!lobbys[code]) {
     lobbys[code] = {
@@ -98,6 +119,8 @@ function ensureLobby(code) {
       map: null,
       bombs: [], // ✅ Bombs array
       bombCheckInterval: null, // ✅ Bomb explosion check interval
+      gameMode: GAME_MODES.FFA, // ✅ Default game mode
+      owner: null, // ✅ First player to join becomes owner
     };
 
     lobbys[code].code = code;
@@ -112,6 +135,71 @@ function ensureLobby(code) {
       );
       const lobby = lobbys[code];
       if (!lobby) return;
+
+      // ✅ TEAM MODE: auto-assign teams and validate balance before starting
+      if (lobby.gameMode === GAME_MODES.TEAM) {
+        // Need exactly 4 players for 2v2
+        if (N !== 4) {
+          console.log(
+            `[lobby ${code}] Team mode requires exactly 4 players, got ${N}. Cancelling start.`,
+          );
+          broadcastForThisLobby("countdownCancelled", {});
+          lobby.chat.push({
+            system: true,
+            text: "⚠ Le mode Équipe nécessite exactement 4 joueurs !",
+            time: now(),
+          });
+          broadcast(code, lobbyPayload(lobby));
+          return;
+        }
+        // Auto-assign teams: alternate players into Alpha and Beta
+        let alphaCount = 0;
+        let betaCount = 0;
+        lobby.players.forEach((p) => {
+          if (p.team === TEAMS.ALPHA) alphaCount++;
+          else if (p.team === TEAMS.BETA) betaCount++;
+        });
+        // Auto-assign unassigned players to balance teams
+        lobby.players.forEach((p) => {
+          if (p.team !== TEAMS.ALPHA && p.team !== TEAMS.BETA) {
+            if (alphaCount <= betaCount) {
+              p.team = TEAMS.ALPHA;
+              alphaCount++;
+            } else {
+              p.team = TEAMS.BETA;
+              betaCount++;
+            }
+          }
+        });
+        // Final validation: exactly 2 per team
+        const finalAlpha = lobby.players.filter(
+          (p) => p.team === TEAMS.ALPHA,
+        ).length;
+        const finalBeta = lobby.players.filter(
+          (p) => p.team === TEAMS.BETA,
+        ).length;
+        if (finalAlpha !== 2 || finalBeta !== 2) {
+          console.log(
+            `[lobby ${code}] Unbalanced teams (Alpha: ${finalAlpha}, Beta: ${finalBeta}). Rebalancing.`,
+          );
+          // Force rebalance: assign first 2 to Alpha, last 2 to Beta
+          lobby.players.forEach((p, i) => {
+            p.team = i < 2 ? TEAMS.ALPHA : TEAMS.BETA;
+          });
+        }
+        console.log(
+          `[lobby ${code}] Team assignments:`,
+          lobby.players.map(
+            (p) => `${p.pseudo}→${p.team === TEAMS.ALPHA ? "Alpha" : "Beta"}`,
+          ),
+        );
+      } else {
+        // FFA mode: clear all team assignments
+        lobby.players.forEach((p) => {
+          p.team = TEAMS.NONE;
+        });
+      }
+
       lobby.state = "in-game";
       lobby.bombs = []; // ✅ Reset bombs on game start
       lobby.powerUps = []; // ✅ Reset power-ups on game start
@@ -151,6 +239,7 @@ function ensureLobby(code) {
             mapGrid: lobby.map, // ✅ Send FULL grid
             mapSeed: mapSeed,
             mapOptions: { destructibleProb: 0.42 },
+            gameMode: lobby.gameMode, // ✅ Include game mode in gameStart
           },
         );
 
@@ -159,6 +248,10 @@ function ensureLobby(code) {
           broadcast(code, { type, ...payload });
           if (type === "gameWin" && !lobby._returnToLobbyScheduled) {
             lobby._returnToLobbyScheduled = true;
+            // ✅ Store winning team for lobby chat message
+            if (payload && payload.winningTeam) {
+              lobby._winningTeam = payload.winningTeam;
+            }
             console.log(`[lobby ${code}] Game won — returning to lobby in 5s`);
             setTimeout(() => {
               lobby._returnToLobbyScheduled = false;
@@ -276,6 +369,10 @@ function exitToLobby(code) {
   let winnerText;
   if (lobby._isDraw) {
     winnerText = `⏰ Temps écoulé — match nul ! Personne ne gagne.`;
+  } else if (lobby._winningTeam) {
+    const teamName =
+      TEAM_INFO[lobby._winningTeam]?.name || `Équipe ${lobby._winningTeam}`;
+    winnerText = `🏆 L'équipe ${teamName} a gagné la partie !`;
   } else {
     const winner = lobby.players.find((p) => !p.dead);
     const alivePlayers = lobby.players.filter((p) => !p.dead);
@@ -286,6 +383,7 @@ function exitToLobby(code) {
     }
   }
   lobby._isDraw = false; // Reset for next game
+  lobby._winningTeam = null; // Reset for next game
 
   lobby.players.forEach((p) => (p.ready = false));
   lobby.chat.push({
@@ -301,8 +399,10 @@ function exitToLobby(code) {
       p._moveInterval = null;
     }
     p._inputState = { left: false, right: false, up: false, down: false };
-    // ✅ Reset all stats to defaults using shared helper
+    // ✅ Reset all stats to defaults using shared helper (preserve team)
+    const savedTeam = p.team || 0;
     resetPlayerStats(p);
+    p.team = savedTeam;
     delete p.x;
     delete p.y;
   });
@@ -310,13 +410,7 @@ function exitToLobby(code) {
   console.log(
     `[exitToLobby] Broadcasting lobby event to ${lobby.players.length} player(s) in ${code}`,
   );
-  broadcast(code, {
-    type: "lobby",
-    players: lobby.players,
-    chat: lobby.chat,
-    queue: lobby.queue.map((q) => q.pseudo),
-    code,
-  });
+  broadcast(code, lobbyPayload(lobby));
   console.log(`[exitToLobby] Done for lobby ${code}`);
 }
 
@@ -454,6 +548,7 @@ function startPlayerMoveInterval(lobby, player) {
           skullEffect: player.skullEffect || null,
           skullUntil: player.skullUntil || null,
           invisible: !!player.invisible,
+          team: player.team || 0, // ✅ Team info
         },
         source: "server-move",
         ts: Date.now(),
@@ -531,6 +626,8 @@ wss.on("connection", (ws) => {
               queue: lobby.queue.map((q) => q.pseudo),
               players: lobby.players,
               chat: lobby.chat,
+              gameMode: lobby.gameMode,
+              owner: lobby.owner,
             }),
           );
           lobby.chat.push({
@@ -538,13 +635,7 @@ wss.on("connection", (ws) => {
             text: `${data.pseudo} est en attente pour rejoindre le lobby`,
             time: now(),
           });
-          broadcast(ws.lobbyCode, {
-            type: "lobby",
-            players: lobby.players,
-            chat: lobby.chat,
-            queue: lobby.queue.map((q) => q.pseudo),
-            code: ws.lobbyCode,
-          });
+          broadcast(ws.lobbyCode, lobbyPayload(lobby));
           return;
         }
 
@@ -556,8 +647,14 @@ wss.on("connection", (ws) => {
           ws,
           lives: 3,
           dead: false,
+          team: TEAMS.NONE, // ✅ Default: no team (FFA)
         };
         lobby.players.push(player);
+
+        // ✅ First player to join becomes the lobby owner
+        if (!lobby.owner) {
+          lobby.owner = id;
+        }
 
         ws.playerId = id;
 
@@ -575,13 +672,7 @@ wss.on("connection", (ws) => {
           time: now(),
         });
 
-        broadcast(ws.lobbyCode, {
-          type: "lobby",
-          players: lobby.players,
-          chat: lobby.chat,
-          queue: lobby.queue.map((q) => q.pseudo),
-          code: ws.lobbyCode,
-        });
+        broadcast(ws.lobbyCode, lobbyPayload(lobby));
 
         if (lobby && lobby.timer) lobby.timer.evaluate();
       }
@@ -605,13 +696,7 @@ wss.on("connection", (ws) => {
         text: data.text,
         time: now(),
       });
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
+      broadcast(code, lobbyPayload(lobby));
       return;
     }
 
@@ -655,13 +740,7 @@ wss.on("connection", (ws) => {
           time: now(),
         });
       }
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
-      });
+      broadcast(code, lobbyPayload(lobby));
       if (lobby.timer) lobby.timer.evaluate();
       return;
     }
@@ -674,13 +753,86 @@ wss.on("connection", (ws) => {
       if (p && typeof data.color === "number") {
         p.color = data.color;
       }
-      broadcast(code, {
-        type: "lobby",
-        players: lobby.players,
-        chat: lobby.chat,
-        queue: lobby.queue.map((q) => q.pseudo),
-        code,
+      broadcast(code, lobbyPayload(lobby));
+      return;
+    }
+
+    // ✅ Team selection handler (2v2 mode)
+    if (data.type === "team") {
+      const code = ws.lobbyCode;
+      const lobby = lobbys[code];
+      if (!lobby) return;
+      const p = lobby.players.find((p) => p.id === id);
+      if (!p) return;
+      const teamId = typeof data.team === "number" ? data.team : TEAMS.NONE;
+
+      // Validate team id
+      if (
+        teamId !== TEAMS.NONE &&
+        teamId !== TEAMS.ALPHA &&
+        teamId !== TEAMS.BETA
+      )
+        return;
+
+      // Check team capacity (max 2 per team)
+      if (teamId !== TEAMS.NONE) {
+        const teamCount = lobby.players.filter(
+          (pl) => pl.id !== p.id && pl.team === teamId,
+        ).length;
+        if (teamCount >= TEAM_MAX_PLAYERS) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Cette équipe est pleine !",
+            }),
+          );
+          return;
+        }
+      }
+
+      p.team = teamId;
+      broadcast(code, lobbyPayload(lobby));
+      return;
+    }
+
+    // ✅ Game mode change handler (owner only)
+    if (data.type === "gameMode") {
+      const code = ws.lobbyCode;
+      const lobby = lobbys[code];
+      if (!lobby) return;
+      // Only the owner can change game mode
+      if (lobby.owner !== id) {
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            message: "Seul le créateur du lobby peut changer le mode.",
+          }),
+        );
+        return;
+      }
+      // Only allow changes in lobby state
+      if (lobby.state !== "lobby") return;
+      const newMode = data.gameMode;
+      if (newMode !== GAME_MODES.FFA && newMode !== GAME_MODES.TEAM) return;
+      if (lobby.gameMode === newMode) return; // no change
+
+      lobby.gameMode = newMode;
+
+      // When switching to team mode, reset all players to unassigned
+      // When switching to FFA, clear all team assignments
+      lobby.players.forEach((p) => {
+        p.team = TEAMS.NONE;
       });
+
+      const modeLabel =
+        newMode === GAME_MODES.TEAM ? "Équipe 2v2" : "Free for All";
+      lobby.chat.push({
+        system: true,
+        text: `⚙ Mode de jeu changé : ${modeLabel}`,
+        time: now(),
+      });
+
+      broadcast(code, lobbyPayload(lobby));
       return;
     }
 
@@ -813,6 +965,21 @@ wss.on("connection", (ws) => {
         time: now(),
       });
       stopPlayerMoveInterval(leaving);
+
+      // ✅ Transfer ownership if the owner left
+      if (lobby.owner === id) {
+        lobby.owner = lobby.players.length > 0 ? lobby.players[0].id : null;
+        if (lobby.owner) {
+          const newOwner = lobby.players.find((p) => p.id === lobby.owner);
+          if (newOwner) {
+            lobby.chat.push({
+              system: true,
+              text: `👑 ${newOwner.pseudo} est maintenant le chef du lobby`,
+              time: now(),
+            });
+          }
+        }
+      }
     } else {
       const qidx = lobby.queue.findIndex((q) => q.id === id);
       if (qidx !== -1) {
@@ -825,13 +992,7 @@ wss.on("connection", (ws) => {
       }
     }
 
-    broadcast(code, {
-      type: "lobby",
-      players: lobby.players,
-      chat: lobby.chat,
-      queue: lobby.queue.map((q) => q.pseudo),
-      code,
-    });
+    broadcast(code, lobbyPayload(lobby));
     if (lobby.timer) lobby.timer.evaluate();
 
     broadcastPlayerCountAll();

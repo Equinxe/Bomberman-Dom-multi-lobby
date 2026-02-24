@@ -285,3 +285,22 @@ body::-webkit-scrollbar-thumb {
 [data-game-chat-list]::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ====== TEAM SELECTOR (2v2 Mode) ====== */
+.team-selector button {
+  transition: all 0.2s ease !important;
+}
+.team-selector button:hover:not([disabled]) {
+  transform: scale(1.08) !important;
+  filter: brightness(1.2);
+}
+.team-selector button:active:not([disabled]) {
+  transform: scale(0.95) !important;
+}
+
+/* Team badge pulse for team-assigned players */
+@keyframes teamBadgePulse {
+  0%   { opacity: 0.85; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.85; }
+}

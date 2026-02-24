@@ -13,6 +13,8 @@ export function Lobby(props) {
     waiting = false,
     queue = [],
     queuePosition = 0,
+    gameMode,
+    owner,
   } = props;
   // progressPercent: keep previous random logic to avoid behavioral change
   const progressPercent = waiting
@@ -58,6 +60,8 @@ export function Lobby(props) {
         waiting,
         progressPercent,
         myNickname: nickname,
+        gameMode,
+        owner,
       }),
       ChatPanel({ chat, nickname }),
     ].filter(Boolean),

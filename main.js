@@ -21,7 +21,14 @@ window.createElement = createElement;
 preloadPlayerSprites();
 preloadPowerUpSprites();
 
-let lobbyState = { players: [], chat: [], queue: [], code: "" };
+let lobbyState = {
+  players: [],
+  chat: [],
+  queue: [],
+  code: "",
+  gameMode: "ffa",
+  owner: null,
+};
 const container = document.getElementById("app");
 let localColor = 0;
 let wsConnected = false;
@@ -309,6 +316,11 @@ function handleLobbyUpdate(players, chat, queue, waitingMsg, code) {
   lobbyState.waiting = waiting;
   lobbyState.queuePosition = queuePosition;
   lobbyState.code = code || getState().lobbyCode;
+  // ✅ Store game mode and owner from server payload
+  if (waitingMsg) {
+    if (waitingMsg.gameMode) lobbyState.gameMode = waitingMsg.gameMode;
+    if (waitingMsg.owner) lobbyState.owner = waitingMsg.owner;
+  }
 
   if (isInLobby) {
     const me = players.find((p) => p.pseudo === myPseudo);
@@ -337,10 +349,36 @@ function handleSendMessage(e) {
   }
 }
 
+function handleTeamSelect(e) {
+  const btn = e.target.closest && e.target.closest("[data-team]");
+  if (!btn) return;
+  const teamId = Number(btn.getAttribute("data-team"));
+  if (Number.isNaN(teamId)) return;
+
+  // Toggle: clicking the already-selected team unselects it (back to NONE / 0)
+  const myPseudo = getState().nickname;
+  const me = (lobbyState.players || []).find((p) => p.pseudo === myPseudo);
+  const currentTeam = (me && me.team) || 0;
+  const newTeam = teamId === currentTeam ? 0 : teamId;
+
+  sendWS("team", { team: newTeam });
+}
+
+function handleGameModeChange(e) {
+  const btn = e.target.closest && e.target.closest("[data-gamemode]");
+  if (!btn) return;
+  const mode = btn.getAttribute("data-gamemode");
+  if (mode) {
+    sendWS("gameMode", { gameMode: mode });
+  }
+}
+
 function registerLobbyEvents() {
   registerEvent("handleReady", handleReady);
   registerEvent("handleSendMessage", handleSendMessage);
   registerEvent("handleSubmit", handleSubmit);
+  registerEvent("handleTeamSelect", handleTeamSelect);
+  registerEvent("handleGameModeChange", handleGameModeChange);
 }
 
 function showLobby() {
@@ -376,6 +414,8 @@ function showLobby() {
         queue: lobbyState.queue,
         waiting: false,
         queuePosition: 0,
+        gameMode: lobbyState.gameMode,
+        owner: lobbyState.owner,
       }),
       container,
       getEventsMap(),
