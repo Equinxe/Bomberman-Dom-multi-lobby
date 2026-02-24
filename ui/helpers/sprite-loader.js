@@ -1,12 +1,21 @@
 // sprite-loader.js
-// Preprocesses Players.png to replace blue background (0,128,255) with transparency
-// Uses an offscreen canvas for one-time image processing (not for game rendering)
+// ============================================================================
+// IMPORTANT: This file uses an offscreen <canvas> ONLY as a one-time image
+// processing utility to remove colored backgrounds (chroma-key) from sprite
+// PNG files.  The canvas is NEVER inserted into the DOM and is NEVER used for
+// game rendering.  All actual game visuals are rendered with standard DOM
+// elements (<div>, <img>) managed by the mini-framework in Core/dom.js.
+// The processed result is exported as a data-URL string and consumed via
+// normal <img src="…"> attributes — no canvas element is ever visible or
+// participates in the rendering pipeline.
+// ============================================================================
 
 const _spriteCache = {};
 const _bgUrlCache = {};
 
 /**
- * Returns a data URL with the blue background removed.
+ * Returns a data URL with the green background removed from PlayerTest.png.
+ * BG colors: (186,254,202) and (204,255,204)
  * On first call, starts async processing and returns the original URL.
  * On subsequent calls, returns the processed data URL.
  */
@@ -16,7 +25,6 @@ export function getTransparentSpriteUrl(originalUrl) {
   }
   if (typeof document === "undefined") return originalUrl;
 
-  // Start loading and processing (only once)
   if (!_spriteCache["_loading_" + originalUrl]) {
     _spriteCache["_loading_" + originalUrl] = true;
     const img = new Image();
@@ -31,28 +39,17 @@ export function getTransparentSpriteUrl(originalUrl) {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
 
-        // Replace background colors with transparent:
-        // 1. Blue (0,128,255) = margin/spacing background
-        // 2. Magenta (255,0,255) = sprite frame background
         for (let i = 0; i < data.length; i += 4) {
           const r = data[i];
           const g = data[i + 1];
           const b = data[i + 2];
 
-          // Exact blue background (margins/spacing)
-          if (r === 0 && g === 128 && b === 255) {
+          // Green background (186,254,202) with tolerance
+          if (Math.abs(r - 186) <= 3 && Math.abs(g - 254) <= 3 && Math.abs(b - 202) <= 3) {
             data[i + 3] = 0;
           }
-          // Blue with small tolerance (anti-aliased edges)
-          else if (r <= 5 && g >= 123 && g <= 133 && b >= 250) {
-            data[i + 3] = 0;
-          }
-          // Exact magenta background (sprite frame bg)
-          else if (r === 255 && g === 0 && b === 255) {
-            data[i + 3] = 0;
-          }
-          // Magenta with small tolerance (anti-aliased edges)
-          else if (r >= 250 && g <= 5 && b >= 250) {
+          // Light green background (204,255,204) with tolerance
+          else if (Math.abs(r - 204) <= 3 && Math.abs(g - 255) <= 3 && Math.abs(b - 204) <= 3) {
             data[i + 3] = 0;
           }
         }
@@ -62,7 +59,7 @@ export function getTransparentSpriteUrl(originalUrl) {
         _spriteCache[originalUrl] = dataUrl;
         _bgUrlCache[originalUrl] = `url('${dataUrl}')`;
         console.log(
-          "✅ Sprite processed: blue+magenta background removed from",
+          "✅ Sprite processed: green background removed from",
           originalUrl,
         );
       } catch (e) {
@@ -78,24 +75,21 @@ export function getTransparentSpriteUrl(originalUrl) {
     img.src = originalUrl;
   }
 
-  return originalUrl; // Return original until processed
+  return originalUrl;
 }
 
 /**
  * Returns CSS background-image url() with the processed sprite.
- * For use in background-image CSS property.
  */
 export function getTransparentSpriteBgUrl(originalUrl) {
-  // Trigger processing if not already done
   getTransparentSpriteUrl(originalUrl);
   return _bgUrlCache[originalUrl] || `url('${originalUrl}')`;
 }
 
 /**
- * Preload and process the sprite sheet immediately.
- * Call this early (e.g., on page load) so sprites are ready when needed.
+ * Preload and process the player sprite sheet immediately.
  */
-export function preloadPlayerSprites(url = "./assets/images/Players.png") {
+export function preloadPlayerSprites(url = "./assets/images/PlayerTest.png") {
   getTransparentSpriteUrl(url);
 }
 

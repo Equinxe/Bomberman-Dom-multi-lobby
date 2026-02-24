@@ -19,6 +19,7 @@ import {
   resetPlayerStats,
   getSpawnPosition,
 } from "../shared/player-defaults.js";
+import { PLAYER_HITBOX_SIZE } from "../shared/constants.js";
 
 const wss = new WebSocketServer({ port: 9001 });
 
@@ -323,7 +324,7 @@ function exitToLobby(code) {
 const MOVE_HZ = 60; // updates per second for each moving player
 const MOVE_INTERVAL_MS = Math.round(1000 / MOVE_HZ);
 const SPEED_CELLS_PER_SEC = 4; // how many tiles per second the player moves (same as client)
-const HITBOX_SIZE = 0.6; // ✅ Constant hitbox size for consistency
+const HITBOX_SIZE = PLAYER_HITBOX_SIZE; // ✅ Use shared constant for consistency
 
 /**
  * Create a virtual map where blocks are treated as floor (for wallpass power-up)
@@ -411,8 +412,10 @@ function startPlayerMoveInterval(lobby, player) {
     player.y = resolved.y;
 
     // Safety clamping
-    player.x = Math.max(0.3, Math.min(cols - 0.7, player.x));
-    player.y = Math.max(0.3, Math.min(rows - 0.7, player.y));
+    // Safety clamping based on hitbox
+    const clampOffset = (1 - HITBOX_SIZE) / 2;
+    player.x = Math.max(clampOffset, Math.min(cols - 1 + clampOffset, player.x));
+    player.y = Math.max(clampOffset, Math.min(rows - 1 + clampOffset, player.y));
 
     // ✅ Update bomb player tracking
     updateBombPlayerTracking(lobby, player.id, player.x, player.y);

@@ -3,22 +3,24 @@ export function ChatPanel({ chat = [], nickname }) {
     tag: "div",
     attrs: {
       style: `
-        background: linear-gradient(135deg,rgba(22,34,20,0.97) 82%,rgba(48,255,180,0.08) 100%);
-        border-radius: 32px;
-        box-shadow: 0 8px 32px 0 #34ffcc33, 0 0 0 8px #3be6aa44 inset;
-        border: 5px solid #3be6aa;
+        background: linear-gradient(160deg, rgba(16,30,20,0.97) 0%, rgba(22,40,28,0.95) 60%, rgba(38,80,55,0.10) 100%);
+        border-radius: 28px;
+        box-shadow: 0 8px 40px 0 rgba(52,255,204,0.10), 0 0 0 1px rgba(59,230,170,0.18) inset;
+        border: 3px solid rgba(59,230,170,0.5);
         width: 360px;
         min-width: 360px;
         max-width: 360px;
         height: 760px;
         min-height: 760px;
         max-height: 760px;
-        padding: 38px 24px 18px 24px;
+        padding: 32px 22px 16px 22px;
         display: flex;
         flex-direction: column;
         align-items: flex-start;
-        gap: 14px;
+        gap: 12px;
         margin-left: 0;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
       `,
     },
     children: [
@@ -26,9 +28,9 @@ export function ChatPanel({ chat = [], nickname }) {
         tag: "div",
         attrs: {
           style:
-            "color:#45ffc0;font-size:22px;margin-bottom:6px;font-weight:bold;",
+            "color:#45ffc0;font-size:20px;margin-bottom:4px;font-weight:bold;letter-spacing:2px;text-shadow:0 0 16px rgba(69,255,192,0.2);",
         },
-        children: ["Tchat"],
+        children: ["💬 Tchat"],
       },
       {
         tag: "div",
@@ -42,8 +44,8 @@ export function ChatPanel({ chat = [], nickname }) {
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            margin-bottom: 7px;
+            gap: 5px;
+            margin-bottom: 6px;
             padding-right: 6px;
             scrollbar-color: #45ffc0 #163013;
             scrollbar-width: thin;
@@ -54,18 +56,19 @@ export function ChatPanel({ chat = [], nickname }) {
           tag: "div",
           attrs: {
             style: `
-              font-size:14px;
+              font-size:13px;
+              line-height: 1.5;
               color: ${
                 msg.system
                   ? "#f9e56e"
                   : msg.author === nickname
                     ? "#45ffc0"
-                    : "#afffd9"
+                    : "#b8f0d8"
               };
               font-weight: ${msg.system ? "bold" : "normal"};
-              background: ${msg.system ? "rgba(240,212,80,0.08)" : "none"};
+              background: ${msg.system ? "rgba(240,212,80,0.06)" : "none"};
               border-radius: 6px;
-              padding: ${msg.system ? "5px 12px" : "0"};
+              padding: ${msg.system ? "4px 10px" : "1px 0"};
             `,
           },
           children: [
@@ -101,13 +104,14 @@ export function ChatPanel({ chat = [], nickname }) {
               autocomplete: "off",
               style: `
                 width: 100%;
-                padding: 6px 8px;
-                font-size: 14px;
-                border-radius: 8px;
-                border: 2px solid #45ffc0;
-                background: rgba(35,54,29,0.97);
+                padding: 8px 10px;
+                font-size: 13px;
+                border-radius: 10px;
+                border: 2px solid rgba(69,255,192,0.4);
+                background: rgba(20,40,24,0.9);
                 color: #d2ffe6;
                 font-family: 'Press Start 2P', monospace;
+                transition: border-color 0.2s ease;
               `,
             },
           },
@@ -118,15 +122,17 @@ export function ChatPanel({ chat = [], nickname }) {
               style: `
                 align-self: flex-end;
                 margin-top: 2px;
-                padding: 6px 18px;
-                font-size: 14px;
-                background: linear-gradient(90deg, #45ffc0 0%, #267c5c 100%);
-                color: #1d2820;
-                border-radius: 8px;
+                padding: 7px 20px;
+                font-size: 12px;
+                background: linear-gradient(135deg, #45ffc0, #2a9d6e);
+                color: #1a2e22;
+                border-radius: 10px;
                 border: none;
                 cursor: pointer;
                 font-family: 'Press Start 2P', monospace;
-                box-sizing: border-box;
+                box-shadow: 0 2px 8px rgba(69,255,192,0.25);
+                transition: transform 0.15s ease, box-shadow 0.2s ease;
+                letter-spacing: 1px;
               `,
             },
             children: ["Envoyer"],

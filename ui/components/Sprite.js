@@ -1,40 +1,47 @@
 // Sprite.js - Player sprite component for lobby/preview
-// Uses Players.png spritesheet (304x687, blue bg, margin=4, sprite=24x24, gap=1, stride=25)
-import { getTransparentSpriteBgUrl } from "../helpers/sprite-loader.js";
+// Uses PlayerTest.png spritesheet (456x592, green bg removed, cell=24x32, no gaps)
 
-const PLAYER_SPRITE_URL = "./assets/images/Players.png";
+import {
+  SPRITE_WIDTH,
+  SPRITE_HEIGHT,
+  SPRITE_ZOOM,
+  SHEET_WIDTH,
+  SHEET_HEIGHT,
+  PLAYER_SHEET_COL_STRIDE,
+  PLAYER_SHEET_ROW_STRIDE,
+} from "./../helpers/constants.js";
+import { getTransparentSpriteBgUrl } from "./../helpers/sprite-loader.js";
+
+const PLAYER_SPRITE_URL = "./assets/images/PlayerTest.png";
 
 export function Sprite({
   frame = 0,
   row = 0,
-  size = 24,
+  width = SPRITE_WIDTH,
+  height = SPRITE_HEIGHT,
   className = "",
-  offsetX = 0, // ✅ Fixed: extra offset (on top of margin)
-  offsetY = 0, // ✅ Fixed: extra offset (on top of margin)
-  zoom = 3,
-  sheetWidth = 304, // ✅ Fixed: actual width
-  sheetHeight = 687,
+  zoom = SPRITE_ZOOM,
+  sheetWidth = SHEET_WIDTH,
+  sheetHeight = SHEET_HEIGHT,
+  colStride = PLAYER_SHEET_COL_STRIDE,
+  rowStride = PLAYER_SHEET_ROW_STRIDE,
   id = "",
   framesCount = 1,
   duration = 0.6,
 }) {
-  const margin = 4; // ✅ Fixed: actual margin in Players.png
-  const spacing = 1; // 1px gap between sprites
-  const stride = size + spacing; // 25px
-  const x = margin + frame * stride + offsetX;
-  const y = margin + row * stride + offsetY;
+  const bgUrl = getTransparentSpriteBgUrl(PLAYER_SPRITE_URL);
 
-  const startX = margin + 0 * stride + offsetX;
-  const endX = margin + Math.max(0, framesCount - 1) * stride + offsetX;
-  const startY = margin + row * stride + offsetY;
+  const x = frame * colStride;
+  const y = row * rowStride;
+
+  const startX = 0;
+  const endX = Math.max(0, framesCount - 1) * colStride;
+  const startY = row * rowStride;
 
   // animation unique par id pour éviter collision
   const animName = `sprite_anim_${
     id || Math.random().toString(36).slice(2, 8)
   }`;
-
-  // Si framesCount > 1, on génère un bloc <style> avec keyframes qui déplace background-position
-  const bgUrl = getTransparentSpriteBgUrl(PLAYER_SPRITE_URL);
 
   if (framesCount > 1) {
     const keyframes = `
@@ -48,8 +55,8 @@ export function Sprite({
       attrs: {
         class: `sprite-wrap ${className}`,
         style: [
-          `width:${size * zoom}px`,
-          `height:${size * zoom}px`,
+          `width:${width * zoom}px`,
+          `height:${height * zoom}px`,
           "display:inline-block",
           "overflow:hidden",
           "box-sizing:border-box",
@@ -63,8 +70,8 @@ export function Sprite({
             id,
             class: `sprite-sheet ${className}`,
             style: [
-              `width:${size * zoom}px`,
-              `height:${size * zoom}px`,
+              `width:${width * zoom}px`,
+              `height:${height * zoom}px`,
               `background-image:${bgUrl}`,
               `background-position:-${startX * zoom}px -${startY * zoom}px`,
               `background-size:${sheetWidth * zoom}px ${sheetHeight * zoom}px`,
@@ -88,8 +95,8 @@ export function Sprite({
       id,
       class: `sprite-sheet ${className}`,
       style: [
-        `width:${size * zoom}px`,
-        `height:${size * zoom}px`,
+        `width:${width * zoom}px`,
+        `height:${height * zoom}px`,
         `background-image:${bgUrl}`,
         `background-position:-${x * zoom}px -${y * zoom}px`,
         `background-size:${sheetWidth * zoom}px ${sheetHeight * zoom}px`,

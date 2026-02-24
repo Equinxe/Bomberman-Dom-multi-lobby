@@ -59,56 +59,59 @@ export function LobbyPanel({
     tag: "div",
     attrs: {
       style: `
-        background: linear-gradient(135deg,rgba(22,34,20,0.98) 80%,rgba(48,255,180,0.13) 100%);
-        border-radius: 32px;
-        box-shadow: 0 8px 32px 0 #34ffcc44, 0 0 0 8px #3be6aa55 inset;
-        border: 5px solid #3be6aa;
-        padding: 50px 48px 34px 48px;
-        min-width: 760px;
-        max-width: 820px;
-        width: 820px;
-        min-height: 780px;
-        max-height: 800px;
-        height: 800px;
+        background: linear-gradient(160deg, rgba(16,30,20,0.97) 0%, rgba(22,40,28,0.95) 60%, rgba(38,80,55,0.12) 100%);
+        border-radius: 28px;
+        box-shadow: 0 8px 40px 0 rgba(52,255,204,0.12), 0 0 0 1px rgba(59,230,170,0.2) inset;
+        border: 3px solid rgba(59,230,170,0.5);
+        padding: 36px 36px 24px 36px;
+        min-width: 680px;
+        max-width: 780px;
+        width: 780px;
+        min-height: 720px;
+        max-height: 860px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 32px;
+        gap: 14px;
         justify-content: center;
         position: relative;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
       `,
     },
     children: [
+      // Title row
       {
         tag: "div",
         attrs: {
           style:
-            "font-size:34px;color:#45ffc0;letter-spacing:2px;text-align:center;margin-bottom:10px;",
+            "font-size:26px;color:#45ffc0;letter-spacing:3px;text-align:center;margin-bottom:2px;text-shadow:0 0 20px rgba(69,255,192,0.25);",
         },
         children: [`Joueurs (${players.length}/4)`],
       },
+      // Lobby code row
       {
         tag: "div",
         attrs: {
           style: `
-            font-size:30px;
-            color:#afffd9;
+            font-size:18px;
+            color:#9fead0;
             text-align:center;
-            margin-bottom:28px;
+            margin-bottom:14px;
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12px;
             justify-content:center;
           `,
         },
         children: [
-          "Code du lobby : ",
+          "Code : ",
           {
             tag: "span",
             attrs: {
               id: "lobby-code-value",
               style:
-                "font-weight:bold;color:#fff;font-size:32px;letter-spacing:4px;background:rgba(48,255,180,0.08);padding:2px 16px;border-radius:8px;",
+                "font-weight:bold;color:#fff;font-size:22px;letter-spacing:5px;background:rgba(69,255,192,0.07);padding:4px 16px;border-radius:10px;border:1px solid rgba(69,255,192,0.15);",
             },
             children: [code],
           },
@@ -119,16 +122,17 @@ export function LobbyPanel({
               type: "button",
               class: "lobby-copy-btn",
               style: `          
-                margin-left:4px;
-                padding: 3px 12px;
-                font-size:17px;
-                border-radius: 7px;
-                background: #45ffc0;
-                color: #222;
+                margin-left:2px;
+                padding: 4px 14px;
+                font-size:12px;
+                border-radius: 8px;
+                background: linear-gradient(135deg, #45ffc0, #2a9d6e);
+                color: #1a2e22;
                 border: none;
                 cursor: pointer;
                 font-family:'Press Start 2P', monospace;
-                transition: background 0.15s;
+                transition: transform 0.15s ease, box-shadow 0.2s ease;
+                box-shadow: 0 2px 8px rgba(69,255,192,0.25);
                 display:flex;
                 align-items:center;
               `,
@@ -139,6 +143,7 @@ export function LobbyPanel({
         ],
       },
       waiting ? ProgressBar({ percent: progressPercent }) : null,
+      // Player grid
       {
         tag: "div",
         attrs: {
@@ -146,13 +151,12 @@ export function LobbyPanel({
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr;
-            gap: 60px 80px;
+            gap: 20px 32px;
             width: 100%;
             justify-items: center;
-            align-items: center;
-            min-height: 540px;
-            max-height: 540px;
-            margin-bottom: 10px;
+            align-items: start;
+            flex: 1;
+            margin-bottom: 8px;
           `,
         },
         children: [0, 1, 2, 3].map((i) => {

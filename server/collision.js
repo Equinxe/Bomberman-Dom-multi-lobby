@@ -1,11 +1,12 @@
 // server/collision.js
 // Server-side collision detection with improved sliding algorithm
 import { isSolidCell } from "../shared/cell-types.js";
+import { PLAYER_HITBOX_SIZE } from "../shared/constants.js";
 
 /**
  * Get player hitbox in world coordinates
  */
-export function getPlayerHitbox(x, y, hitboxSize = 0.6) {
+export function getPlayerHitbox(x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   const offset = (1 - hitboxSize) / 2;
   return {
     left: x + offset,
@@ -45,7 +46,7 @@ function hitboxOverlapsCell(hitbox, cellX, cellY) {
 /**
  * Check collision between player hitbox and map
  */
-export function checkCollision(map, x, y, hitboxSize = 0.6) {
+export function checkCollision(map, x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   if (!map || !map.grid) return false;
 
   const hitbox = getPlayerHitbox(x, y, hitboxSize);
@@ -77,7 +78,7 @@ export function resolveCollision(
   oldY,
   newX,
   newY,
-  hitboxSize = 0.6,
+  hitboxSize = PLAYER_HITBOX_SIZE,
 ) {
   if (!map || !map.grid) {
     console.warn("[resolveCollision] No map or grid provided");
@@ -127,7 +128,7 @@ export function resolveCollision(
  * ✅ Check if position collides with bombs (using hitbox collision)
  * The bomb blocks the entire cell, but only if the player is not marked as "inside"
  */
-export function checkBombCollision(lobby, playerId, x, y, hitboxSize = 0.6) {
+export function checkBombCollision(lobby, playerId, x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   if (!lobby.bombs) return false;
 
   // Get player's hitbox

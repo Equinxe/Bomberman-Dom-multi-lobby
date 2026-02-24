@@ -17,7 +17,7 @@ import {
 
 window.createElement = createElement;
 
-// ✅ Start preprocessing sprites immediately (removes blue/magenta backgrounds)
+// ✅ Start preprocessing sprites immediately (removes green/magenta backgrounds)
 preloadPlayerSprites();
 preloadPowerUpSprites();
 
@@ -216,7 +216,7 @@ function attachSocketHandlers() {
         showCollisionOverlays: false, // do not show tile overlays
         inputEnabled: true,
         tilesetUrl: "./assets/images/TileSets.png", // ✅ Chemin du tileset
-        playerSpriteUrl: "./assets/images/Players.png", // ✅ Chemin des sprites joueurs
+        playerSpriteUrl: "./assets/images/PlayerTest.png", // ✅ New transparent sprite sheet
         gameStartData: data, // ✅ Pass gameStart payload so client can initialize immediately
       });
 

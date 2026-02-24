@@ -59,21 +59,22 @@ export class LobbyTimer {
     this.timer.timeoutId = setTimeout(() => {
       const { N, R, players } = this._counts();
       this.clearTimer();
-      // Instead of broadcasting a raw gameStart, call onStartGame callback with context
-      if (this.onStartGame) {
-        this.onStartGame({ reason: "waiting_timeout", N, R, players });
+      // ✅ After 20s waiting, transition to a 10s countdown (not directly to game start)
+      // This matches the spec: "After 20 seconds, did you get 10 second game start countdown?"
+      if (N >= 2) {
+        this.startCountdown(10, true);
       } else {
-        // fallback: broadcast minimal gameStart (not recommended)
-        this.broadcast("gameStart", { reason: "waiting_timeout", N, R });
+        this.broadcast("waitingCancelled", {});
       }
     }, seconds * 1000);
   }
 
-  startCountdown(seconds = 10) {
+  startCountdown(seconds = 10, force = false) {
     const { N, R } = this._counts();
 
     // ✅ Allow countdown if 4+ players (even without all ready) OR all ready with N>=2
-    const canStart = N >= 4 || (R === N && N >= 2);
+    // OR if forced (after 20s waiting period completed with N>=2)
+    const canStart = force || N >= 4 || (R === N && N >= 2);
     if (!canStart) {
       if (R >= 1) {
         this.startWaiting(20);
@@ -115,9 +116,9 @@ export class LobbyTimer {
     this.timer.timeoutId = setTimeout(() => {
       const { N: N2, R: R2, players } = this._counts();
       this.clearTimer();
-      // ✅ Start game if 4+ players OR all ready with N>=2
-      const canStartNow = N2 >= 4 || (R2 === N2 && N2 >= 2);
-      if (canStartNow) {
+      // ✅ Start game if forced, 4+ players, or all ready with N>=2
+      const canStartNow = force || N2 >= 4 || (R2 === N2 && N2 >= 2);
+      if (canStartNow && N2 >= 2) {
         if (this.onStartGame) {
           this.onStartGame({ reason: "countdown_done", N: N2, R: R2, players });
         } else {

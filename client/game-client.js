@@ -106,7 +106,7 @@ export function attachClientGame(socket, container, opts = {}) {
       }
       out.id = out.id ?? out.pseudo ?? `p${i + 1}`;
       out.pseudo = out.pseudo ?? `J${i + 1}`;
-      out.color = typeof out.color === "number" ? out.color : (i % 6) + 1;
+      out.color = typeof out.color === "number" ? out.color : (i % 8);
       out.lives = typeof out.lives === "number" ? out.lives : 3;
       out.dead = !!out.dead;
       out.invincibleUntil = out.invincibleUntil || null;
@@ -974,7 +974,7 @@ export function attachClientGame(socket, container, opts = {}) {
         cellSize,
         playerScale,
         tilesetUrl: opts.tilesetUrl || "./assets/images/TileSets.png",
-        playerSpriteUrl: opts.playerSpriteUrl || "./assets/images/Players.png",
+        playerSpriteUrl: opts.playerSpriteUrl || "./assets/images/PlayerTest.png",
         powerUpSpriteUrl: "./assets/images/PowerUps.png",
         tileSrcSize,
         tilesPerRow: opts.tilesPerRow || tilesPerRow,

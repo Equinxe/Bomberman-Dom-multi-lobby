@@ -77,18 +77,43 @@ body::-webkit-scrollbar-thumb {
 }
 
 .lobby-player-block {
-  background: linear-gradient(135deg,rgba(22,34,20,0.99) 85%,rgba(48,255,180,0.15) 100%);
-  border-radius: 28px;
-  box-shadow: 0 8px 38px 0 #34ffcc55, 0 0 0 8px #3be6aa77 inset, 0 0 32px 8px #7affc677;
-  border: 4px solid #3be6aa;
-  padding: 38px 38px 26px 38px;
-  min-width: 320px;
-  max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  height: 430px;
+  /* Styles are now inline in PlayerCard.js for full control */
+  /* Only keep layer promotion for performance */
+  contain: layout style;
+}
+
+.lobby-player-block.player-card {
+  /* Reset any CSS that could conflict with inline styles */
+  height: auto;
+  min-width: auto;
+  max-width: none;
+  padding: 18px 16px 16px 16px;
+  box-shadow: none;
+}
+
+.lobby-player-block.player-card:hover {
+  border-color: rgba(69,255,192,0.7) !important;
+  box-shadow: 0 0 28px rgba(69,255,192,0.15), 0 4px 20px rgba(0,0,0,0.3) !important;
+}
+
+.lobby-ready-btn {
+  transition: transform 0.15s ease, box-shadow 0.25s ease !important;
+}
+.lobby-ready-btn:hover {
+  transform: scale(1.05) !important;
+}
+.lobby-ready-btn:active {
+  transform: scale(0.95) !important;
+}
+
+.color-selector button {
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border 0.2s ease !important;
+}
+.color-selector button:hover:not([style*="not-allowed"]) {
+  transform: scale(1.18) !important;
+}
+.color-selector button:active:not([style*="not-allowed"]) {
+  transform: scale(0.9) !important;
 }
 
 .lobby-chat-block {

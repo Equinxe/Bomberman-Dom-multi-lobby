@@ -1,6 +1,6 @@
 // server/bomb.js
 // Bomb logic for the game server
-import { POWERUP_TYPE_KEYS, POWERUP_DROP_CHANCE } from "../shared/constants.js";
+import { POWERUP_TYPE_KEYS, POWERUP_DROP_CHANCE, PLAYER_HITBOX_SIZE } from "../shared/constants.js";
 
 // ============= SKULL CURSE DEFINITIONS =============
 const SKULL_EFFECTS = [
@@ -92,12 +92,12 @@ export function checkPowerUpPickup(lobby, player, broadcastFunc) {
   if (player.dead) return;
   if (typeof player.x !== "number" || typeof player.y !== "number") return;
 
-  const HITBOX_SIZE = 0.6;
-  const offset = (1 - HITBOX_SIZE) / 2;
+  const hitbox = PLAYER_HITBOX_SIZE;
+  const offset = (1 - hitbox) / 2;
   const pLeft = player.x + offset;
-  const pRight = player.x + offset + HITBOX_SIZE;
+  const pRight = player.x + offset + hitbox;
   const pTop = player.y + offset;
-  const pBottom = player.y + offset + HITBOX_SIZE;
+  const pBottom = player.y + offset + hitbox;
 
   const pickedUp = [];
 
@@ -350,8 +350,8 @@ export function checkTimedEffects(lobby, broadcastFunc) {
 function checkSkullContagion(lobby, broadcastFunc) {
   if (!lobby.players) return;
   const now = Date.now();
-  const HITBOX_SIZE = 0.6;
-  const offset = (1 - HITBOX_SIZE) / 2;
+  const hitbox = PLAYER_HITBOX_SIZE;
+  const offset = (1 - hitbox) / 2;
 
   const cursedPlayers = lobby.players.filter(
     (p) => !p.dead && p.skullEffect && p.skullUntil && now < p.skullUntil,
@@ -367,15 +367,15 @@ function checkSkullContagion(lobby, broadcastFunc) {
     if (typeof cursed.x !== "number") continue;
 
     const cLeft = cursed.x + offset;
-    const cRight = cursed.x + offset + HITBOX_SIZE;
+    const cRight = cursed.x + offset + hitbox;
     const cTop = cursed.y + offset;
-    const cBottom = cursed.y + offset + HITBOX_SIZE;
+    const cBottom = cursed.y + offset + hitbox;
 
     for (const clean of cleanPlayers) {
       const pLeft = clean.x + offset;
-      const pRight = clean.x + offset + HITBOX_SIZE;
+      const pRight = clean.x + offset + hitbox;
       const pTop = clean.y + offset;
-      const pBottom = clean.y + offset + HITBOX_SIZE;
+      const pBottom = clean.y + offset + hitbox;
 
       const overlaps = !(
         cRight <= pLeft ||
@@ -500,7 +500,7 @@ export function updateBombPlayerTracking(
   playerId,
   x,
   y,
-  hitboxSize = 0.6,
+  hitboxSize = PLAYER_HITBOX_SIZE,
 ) {
   if (!lobby.bombs) return;
 
@@ -597,7 +597,7 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
   const hitPlayers = [];
   const killedPlayers = [];
   const now = Date.now();
-  const HITBOX_SIZE = 0.6;
+  const explosionHitbox = PLAYER_HITBOX_SIZE;
 
   lobby.players.forEach((player) => {
     // Skip dead players
@@ -612,11 +612,11 @@ function explodeBomb(lobby, bomb, broadcastFunc) {
     if (typeof player.x !== "number" || typeof player.y !== "number") return;
 
     // Player hitbox
-    const offset = (1 - HITBOX_SIZE) / 2;
+    const offset = (1 - explosionHitbox) / 2;
     const pLeft = player.x + offset;
-    const pRight = player.x + offset + HITBOX_SIZE;
+    const pRight = player.x + offset + explosionHitbox;
     const pTop = player.y + offset;
-    const pBottom = player.y + offset + HITBOX_SIZE;
+    const pBottom = player.y + offset + explosionHitbox;
 
     // Check if player hitbox overlaps with any explosion cell
     const isHit = explosionCells.some((cell) => {

@@ -6,75 +6,70 @@ export {
   PLAYER_HITBOX_SIZE,
 } from "../../shared/constants.js";
 
-// Players.png layout: 304x687, blue bg (0,128,255)
-// margin=4px from edge to first sprite, sprite=24x24, gap=1px between sprites
-// stride = 25px (24+1)
-// Row indices map to Y positions: y = 4 + row * 25
-// Rows 0-4: 24px tall (standard player sprites)
-// Row 0 (y=4):  White down(3)+left(3)+up(3) = 9 walk frames + 1 extra
-// Row 1 (y=29): White extra animations
-// Row 2 (y=54): White extra
-// Row 3 (y=79): Black down(3)+left(3)+up(3) = 9 walk frames + 1 extra
-// Row 4 (y=104): Black extra
-// Rows 5-6 are taller (48px) - death/special animations
-// Row 7 (y=227): 32px tall
-// Rows 8-16: 24px color variants
-// Row 8  (y=260): color variant walk
-// Row 9  (y=285): color variant walk
-// Row 10 (y=310): color variant extra
-// Row 11 (y=335): Red walk (down3+left3+up3+extra)
-// Row 12 (y=360): Red extra
-// Row 13 (y=385): Blue walk
-// Row 14 (y=410): Blue extra
-// Row 15 (y=435): Green walk
-// Row 16 (y=460): Green extra
-// Row 17 (y=485): Yellow walk (32px tall)
+// PlayerTest.png layout (pixel-verified): 456×592, green background removed
+// Grid: 19 cols × 18 rows, cell = 24×32 px, NO margin, NO gaps
+// Col stride = 24px, Row stride = 32px
+// Art within each cell: ~5px left pad, 13px top pad, 14-16px wide, 19px tall
+// CSS formula: bgPosX = -(col*24*zoom), bgPosY = -(row*32*zoom)
+// Display size per cell = 24*zoom × 32*zoom
+//
+// Player color rows (pixel-verified, 8 rows):
+//   Row 0 = White, Row 1 = Green, Row 2 = Red, Row 3 = Cyan,
+//   Row 4 = Yellow, Row 5 = Blue, Row 6 = Pink, Row 7 = Black
+// Walk frames per row: cols 0-1-2 (down), 3-4-5 (up), 6-7-8 (right)
+// Left = mirror of right
 
+// SPRITE_ROWS maps color index → row in the spritesheet
+// Color index matches PLAYER_COLORS order in shared/constants.js
 export const SPRITE_ROWS = [
-  { row: 0, offsetY: 0 }, // Blanc  (y=4+0*25=4)
-  { row: 3, offsetY: 0 }, // Noir   (y=4+3*25=79)
-  { row: 11, offsetY: 6 }, // Rouge  (y=4+11*25+6=285 → actual y=335)
-  { row: 13, offsetY: 6 }, // Bleu   (y=4+13*25+6=335 → actual y=385)
-  { row: 15, offsetY: 6 }, // Vert   (y=4+15*25+6=385 → actual y=435)
-  { row: 17, offsetY: 6 }, // Jaune  (y=4+17*25+6=435 → actual y=485)
+  { row: 0 }, // White
+  { row: 1 }, // Green
+  { row: 2 }, // Red
+  { row: 3 }, // Cyan
+  { row: 4 }, // Yellow
+  { row: 5 }, // Blue
+  { row: 6 }, // Pink
+  { row: 7 }, // Black
 ];
 
-export const SPRITE_SIZE = 24;
+export const SPRITE_WIDTH = 24;  // cell width in the spritesheet
+export const SPRITE_HEIGHT = 32; // cell height in the spritesheet (row stride)
+export const SPRITE_SIZE = 24;   // kept for backward compat (width)
 export const SPRITE_ZOOM = 3;
-export const SHEET_WIDTH = 304; // ✅ Fixed: actual measured width
-export const SHEET_HEIGHT = 687;
+export const SHEET_WIDTH = 456;
+export const SHEET_HEIGHT = 592;
 
-// Player sprite sheet grid constants
-export const PLAYER_SHEET_MARGIN = 4; // px from edge to first sprite
-export const PLAYER_SHEET_SPACING = 1; // px gap between sprites
-export const PLAYER_SHEET_STRIDE = 25; // SPRITE_SIZE + SPACING
+// Player sprite sheet grid constants — no margin, no gaps
+export const PLAYER_SHEET_MARGIN = 0;
+export const PLAYER_SHEET_COL_GAP = 0;
+export const PLAYER_SHEET_ROW_GAP = 0;
+export const PLAYER_SHEET_COL_STRIDE = 24; // = SPRITE_WIDTH (no gap)
+export const PLAYER_SHEET_ROW_STRIDE = 32; // = SPRITE_HEIGHT (row stride, verified)
+
+// Legacy aliases
+export const PLAYER_SHEET_SPACING = PLAYER_SHEET_COL_GAP;
+export const PLAYER_SHEET_STRIDE = PLAYER_SHEET_COL_STRIDE;
 
 // ✅ Animation configuration for each direction
-// The walk cycle in the sprite sheet is: idle, walkA, idle, walkB
-// To make fluid animation: idle(0) → walkA(1) → idle(0) → walkB(2)
-// This creates a proper left-right leg cycle
-// xOffsets: per-cycle-frame pixel correction to center the character art
-//   (some walkB frames are drawn shifted ~8px right in the sprite sheet)
+// PlayerTest.png walk frames: 0-1-2 (down), 3-4-5 (up), 6-7-8 (right)
+// Walk cycle: idle(0) → walkA(1) → idle(0) → walkB(2) for smooth leg alternation
+// Left = mirror of right frames
 export const PLAYER_ANIMATIONS = {
   down: {
     frames: [0, 1, 0, 2],
-    xOffsets: [0, 0, 0, -8], // walkB (frame 2) is shifted +8px right, correct by -8
     idleFrame: 0,
   },
-  left: {
-    frames: [3, 4, 3, 5],
-    xOffsets: [0, 0, 0, 0], // left frames are centered
-    idleFrame: 3,
-  },
   up: {
-    frames: [6, 7, 6, 8],
-    xOffsets: [0, 0, 0, -8], // walkB (frame 8) is shifted +8px right, correct by -8
-    idleFrame: 6,
+    frames: [3, 4, 3, 5],
+    idleFrame: 3,
   },
   right: {
-    frames: [3, 4, 3, 5],
-    xOffsets: [0, 0, 0, 0],
-    idleFrame: 3,
+    frames: [6, 7, 6, 8],
+    idleFrame: 6,
+  },
+  left: {
+    frames: [6, 7, 6, 8],
+    idleFrame: 6,
     mirror: true,
   },
 };

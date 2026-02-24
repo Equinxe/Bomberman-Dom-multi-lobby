@@ -43,7 +43,7 @@ export function Lobby(props) {
         flex-direction: row;
         justify-content: center;
         align-items: center;
-        gap: 88px;
+        gap: 60px;
         width: 100vw;
         min-height: 100vh;
         font-family: 'Press Start 2P', monospace;

@@ -1,13 +1,17 @@
-// Updated GameView: proper sprite rendering with transparency masking
-// ✅ Blue background on Players.png masked out
+// Updated GameView: proper sprite rendering with DOM elements (no canvas/WebGL)
+// ✅ PlayerTest.png: green bg removed via offline preprocessing, 24x32 cells, NO gaps, 7 color rows
+// ✅ All game rendering uses <div> and <img> DOM elements — managed by Core/dom.js mini-framework
 // ✅ Bomb sprites: dark pump (R6 C0-2) + bright flash (R6 C4-7)
 // ✅ Explosion sprites: directional pieces (center/vertical/horizontal) with 5 animation phases
 // ✅ Smooth 4-frame walk animation cycle
 import {
   SPRITE_ROWS,
-  SPRITE_SIZE,
+  SPRITE_WIDTH,
+  SPRITE_HEIGHT,
   SHEET_WIDTH,
   SHEET_HEIGHT,
+  PLAYER_SHEET_COL_STRIDE,
+  PLAYER_SHEET_ROW_STRIDE,
   PLAYER_ANIMATIONS,
   BOMB_SPRITE,
   EXPLOSION_SPRITES,
@@ -42,7 +46,7 @@ export function GameView(options) {
     cellSize = 24,
     mapScale = 1.6,
     tilesetUrl = "./assets/images/TileSets.png",
-    playerSpriteUrl = "./assets/images/Players.png",
+    playerSpriteUrl = "./assets/images/PlayerTest.png",
     powerUpSpriteUrl = "./assets/images/PowerUps.png",
     tileSrcSize = 16,
     tileSpacing = 1,
@@ -64,7 +68,7 @@ export function GameView(options) {
   // ensure tileset info is loaded/cached
   ensureTilesetInfo(tilesetUrl, tileSrcSize, tileSpacing);
 
-  // ✅ Preprocess player sprite to remove blue background
+  // ✅ Preprocess player sprite to remove green background
   const processedPlayerSpriteUrl = getTransparentSpriteUrl(playerSpriteUrl);
 
   // build tiles
@@ -435,15 +439,9 @@ export function GameView(options) {
       const spriteRow =
         (SPRITE_ROWS && SPRITE_ROWS[colorIdx] && SPRITE_ROWS[colorIdx].row) ||
         0;
-      const offsetY =
-        (SPRITE_ROWS &&
-          SPRITE_ROWS[colorIdx] &&
-          SPRITE_ROWS[colorIdx].offsetY) ||
-        0;
 
-      const margin = 4;
-      const spacing = 1;
-      const sourceSize = SPRITE_SIZE || 24;
+      const sourceW = SPRITE_WIDTH || 24;
+      const sourceH = SPRITE_HEIGHT || 32;
 
       // ✅ Get animation state
       const animation = p.animation || {
@@ -468,21 +466,30 @@ export function GameView(options) {
       }
 
       // Use playerScale to size sprite target pixels (zoom)
-      const targetPx = Math.round(
-        displayedCell * (typeof playerScale === "number" ? playerScale : 1),
-      );
-      const bgZoom = targetPx / sourceSize;
+      // PlayerTest.png art within each 24x32 cell: x=8..23, y=13..31 (16x19 px)
+      // We render the full cell but position so feet align with cell bottom
+      // and character is horizontally centered on the game cell
+      const scale = typeof playerScale === "number" ? playerScale : 1;
+      const bgZoom = (displayedCell * scale) / sourceW;
+      const targetW = Math.round(sourceW * bgZoom);
+      const targetH = Math.round(sourceH * bgZoom);
 
-      const startX = margin + frameIndex * (sourceSize + spacing);
-      const startY = margin + spriteRow * (sourceSize + spacing) + offsetY;
+      const startX = frameIndex * PLAYER_SHEET_COL_STRIDE;
+      const startY = spriteRow * PLAYER_SHEET_ROW_STRIDE;
 
       const imgOffsetX = -Math.round(startX * bgZoom);
       const imgOffsetY = -Math.round(startY * bgZoom);
-      const imgWidth = Math.round((SHEET_WIDTH || 304) * bgZoom);
-      const imgHeight = Math.round((SHEET_HEIGHT || 687) * bgZoom);
+      const imgWidth = Math.round((SHEET_WIDTH || 456) * bgZoom);
+      const imgHeight = Math.round((SHEET_HEIGHT || 592) * bgZoom);
 
-      const wrapperLeft = Math.round(p.x * displayedCell);
-      const wrapperTop = Math.round(p.y * displayedCell);
+      // Position: center horizontally on cell, align feet to cell bottom
+      // Art feet are at y=31 (the last row) in the 32px sprite cell (pixel-verified).
+      // Art extends to the very bottom of the cell, so sprite bottom = cell bottom.
+      const extraW = targetW - displayedCell;
+      const wrapperLeft = Math.round(p.x * displayedCell - extraW / 2);
+      const wrapperTop = Math.round(
+        (p.y + 1) * displayedCell - targetH
+      );
 
       // ✅ Invincibility flashing effect
       const now = Date.now();
@@ -533,7 +540,7 @@ export function GameView(options) {
         playerEffectStyle += ` filter: ${playerFilter};`;
       }
 
-      const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetPx}px; height:${targetPx}px; z-index:60; display:block; pointer-events:none; overflow:visible; ${
+      const wrapperStyle = `position:absolute; left:${wrapperLeft}px; top:${wrapperTop}px; width:${targetW}px; height:${targetH}px; z-index:60; display:block; pointer-events:none; overflow:visible; ${
         shouldMirror ? "transform: scaleX(-1);" : ""
       } ${playerEffectStyle}`;
 
@@ -561,7 +568,7 @@ export function GameView(options) {
           {
             tag: "div",
             attrs: {
-              style: `overflow:hidden; width:${targetPx}px; height:${targetPx}px;`,
+              style: `overflow:hidden; width:${targetW}px; height:${targetH}px;`,
             },
             children: [
               {

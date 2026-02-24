@@ -1,51 +1,57 @@
 import {
   SPRITE_ROWS,
-  SPRITE_SIZE,
-  SPRITE_ZOOM,
   SHEET_WIDTH,
   SHEET_HEIGHT,
+  PLAYER_SHEET_COL_STRIDE,
+  PLAYER_SHEET_ROW_STRIDE,
 } from "./../helpers/constants.js";
-import { getTransparentSpriteBgUrl } from "../helpers/sprite-loader.js";
+import { getTransparentSpriteBgUrl } from "./../helpers/sprite-loader.js";
 
-const PLAYER_SPRITE_URL = "./assets/images/Players.png";
+const PLAYER_SPRITE_URL = "./assets/images/PlayerTest.png";
 
-// PlayerPreview: extrait depuis ui/lobby.js — rend une preview animée du sprite
-export function PlayerPreview({ colorIdx, uniqueId }) {
-  const margin = 4;
-  const spacing = 1;
+// Preview zoom — bigger than in-game SPRITE_ZOOM (3) for lobby visibility
+const PREVIEW_ZOOM = 5;
+
+// PlayerPreview: renders an animated player sprite preview in the lobby
+// Art within each 24x32 cell (pixel-verified across all 8 rows):
+//   x = 8..23 (16px wide), y = 13..31 (19px tall)
+// We use a slightly larger crop (4px left pad, 20px wide) to avoid
+// sub-pixel clipping at the edges when the browser scales up.
+const ART_LEFT_PAD = 4;    // px of empty space left of visible window
+const ART_TOP_PAD = 13;    // px of empty space above art in each cell
+const ART_WIDTH = 20;      // px visible width (includes 4px left safety + all art)
+const ART_HEIGHT = 19;     // px of actual art height
+
+export function PlayerPreview({ colorIdx, uniqueId, zoom = PREVIEW_ZOOM }) {
   const framesCount = 3;
-  const frameSize = SPRITE_SIZE;
-  const displayFrameSize = frameSize - 1;
-  const previewSize = displayFrameSize * SPRITE_ZOOM;
-  let adjustPx = 0;
   const tickMs = 260;
 
+  // Visible art dimensions (cropped)
+  const displayW = ART_WIDTH * zoom;
+  const displayH = ART_HEIGHT * zoom;
+
   const row = SPRITE_ROWS[colorIdx] ? SPRITE_ROWS[colorIdx].row : 0;
-  const offsetY = SPRITE_ROWS[colorIdx]
-    ? SPRITE_ROWS[colorIdx].offsetY || 0
-    : 0;
-  const posY = margin + row * (frameSize + spacing) + offsetY;
 
-  const frameXs = [];
+  // Walk-down frames: cols 0, 1, 2
+  // Background-position offsets: shift so that only the art part is visible
+  // bgPosX = -(col * 24 + ART_LEFT_PAD) * zoom
+  // bgPosY = -(row * 32 + ART_TOP_PAD) * zoom
+  const framePositionsPx = [];
   for (let n = 0; n < framesCount; n++) {
-    const base = margin + n * (frameSize + spacing);
-    const corrected = n > 0 ? base + adjustPx : base;
-    frameXs.push(corrected);
+    const srcX = n * PLAYER_SHEET_COL_STRIDE + ART_LEFT_PAD;
+    const srcY = row * PLAYER_SHEET_ROW_STRIDE + ART_TOP_PAD;
+    framePositionsPx.push(`-${srcX * zoom}px -${srcY * zoom}px`);
   }
-
-  const cropShift = 0;
-  const displayOffsetPerFrame = frameXs.map((frameX) => frameX + cropShift);
-  const posYpx = -posY * SPRITE_ZOOM;
-  const framePositionsPx = displayOffsetPerFrame.map(
-    (x) => `-${x * SPRITE_ZOOM}px ${posYpx}px`,
-  );
 
   const safeId = `preview_${String(uniqueId).replace(
     /[^a-z0-9_-]/gi,
     "",
   )}_${Math.random().toString(36).slice(2, 6)}`;
-  const bgSizeX = SHEET_WIDTH * SPRITE_ZOOM;
-  const bgSizeY = SHEET_HEIGHT * SPRITE_ZOOM;
+  const bgSizeX = SHEET_WIDTH * zoom;
+  const bgSizeY = SHEET_HEIGHT * zoom;
+
+  // Use the processed transparent sprite (green bg removed)
+  const bgUrl = getTransparentSpriteBgUrl(PLAYER_SPRITE_URL);
 
   const scriptContent = `
 (function(){
@@ -74,12 +80,12 @@ export function PlayerPreview({ colorIdx, uniqueId }) {
     attrs: {
       class: "player-preview-wrap",
       style: `
-        width: ${previewSize}px;
-        height: ${previewSize}px;
+        width: ${displayW}px;
+        height: ${displayH}px;
         overflow: hidden;
-        display:flex;
-        align-items:center;
-        justify-content:center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       `,
     },
     children: [
@@ -88,14 +94,13 @@ export function PlayerPreview({ colorIdx, uniqueId }) {
         attrs: {
           id: safeId,
           style: `
-            width: ${previewSize}px;
-            height: ${previewSize}px;
-            background-image: ${getTransparentSpriteBgUrl(PLAYER_SPRITE_URL)};
+            width: ${displayW}px;
+            height: ${displayH}px;
+            background-image: ${bgUrl};
             background-position: ${framePositionsPx[0]};
             background-size: ${bgSizeX}px ${bgSizeY}px;
             background-repeat: no-repeat;
             image-rendering: pixelated;
-            border-radius:6px;
           `,
         },
       },

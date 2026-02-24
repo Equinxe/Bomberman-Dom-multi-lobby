@@ -1,3 +1,5 @@
+import { PLAYER_COLORS } from "./../helpers/constants.js";
+
 export function HUD({
   score = 0,
   countdown = null, // seconds remaining (300..0) or null
@@ -442,14 +444,7 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
 }
 
 function playerColorToCss(index) {
-  const palette = [
-    "#ffffff",
-    "#222222",
-    "#ff4b4b",
-    "#4b8bff",
-    "#58ff7a",
-    "#ffd24b",
-    "#ff9cff",
-  ];
-  return palette[(index || 0) % palette.length];
+  const idx = typeof index === "number" ? index % PLAYER_COLORS.length : 0;
+  const entry = PLAYER_COLORS[idx] || PLAYER_COLORS[0];
+  return entry && entry.hex ? entry.hex : "#ffffff";
 }
