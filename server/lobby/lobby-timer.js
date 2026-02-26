@@ -1,4 +1,4 @@
-// server/lobby-timer.js
+// server/lobby/lobby-timer.js
 // LobbyTimer: manages waiting/countdown phases before game start.
 // Calls onStartGame callback when countdown completes.
 export class LobbyTimer {

@@ -1,6 +1,6 @@
 // server/lobby/lobby-manager.js
 
-import { LobbyTimer } from "../lobby-timer.js";
+import { LobbyTimer } from "./lobby-timer.js";
 import { resetPlayerStats } from "../../shared/player-defaults.js";
 import { TEAMS, TEAM_INFO } from "../../shared/constants.js";
 import { stopPlayerMoveInterval } from "../game/movement.js";
