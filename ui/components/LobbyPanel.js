@@ -108,7 +108,7 @@ export function LobbyPanel({
         },
         children: [`Joueurs (${players.length}/4)`],
       },
-      // ✅ Game mode settings (owner can change, others see current mode)
+      // Game mode settings (owner can change, others see current mode)
       LobbySettings({ gameMode, isOwner }),
       // Lobby code row
       {

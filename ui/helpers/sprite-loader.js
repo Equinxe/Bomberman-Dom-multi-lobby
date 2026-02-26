@@ -67,7 +67,7 @@ export function getTransparentSpriteUrl(originalUrl) {
         _spriteCache[originalUrl] = dataUrl;
         _bgUrlCache[originalUrl] = `url('${dataUrl}')`;
         console.log(
-          "✅ Sprite processed: green background removed from",
+          "Sprite processed: green background removed from",
           originalUrl,
         );
       } catch (e) {
@@ -185,7 +185,7 @@ export function getTransparentPowerUpUrl(originalUrl) {
         const dataUrl = canvas.toDataURL("image/png");
         _spriteCache[cacheKey] = dataUrl;
         console.log(
-          "✅ PowerUps sprite processed: magenta+blue backgrounds removed (" +
+          "PowerUps sprite processed: magenta+blue backgrounds removed (" +
             img.width +
             "x" +
             img.height +

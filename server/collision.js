@@ -1,11 +1,7 @@
 // server/collision.js
-// Server-side collision detection with improved sliding algorithm
 import { isSolidCell } from "../shared/cell-types.js";
 import { PLAYER_HITBOX_SIZE } from "../shared/constants.js";
 
-/**
- * Get player hitbox in world coordinates
- */
 export function getPlayerHitbox(x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   const offset = (1 - hitboxSize) / 2;
   return {
@@ -16,9 +12,6 @@ export function getPlayerHitbox(x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   };
 }
 
-/**
- * Get cell at grid position
- */
 function getCellAt(grid, x, y) {
   if (!grid || !Array.isArray(grid)) return null;
   if (y < 0 || y >= grid.length) return null;
@@ -26,9 +19,6 @@ function getCellAt(grid, x, y) {
   return grid[y][x];
 }
 
-/**
- * Check if a hitbox overlaps with a solid cell
- */
 function hitboxOverlapsCell(hitbox, cellX, cellY) {
   const cellLeft = cellX;
   const cellRight = cellX + 1;
@@ -43,9 +33,6 @@ function hitboxOverlapsCell(hitbox, cellX, cellY) {
   );
 }
 
-/**
- * Check collision between player hitbox and map
- */
 export function checkCollision(map, x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   if (!map || !map.grid) return false;
 
@@ -69,9 +56,6 @@ export function checkCollision(map, x, y, hitboxSize = PLAYER_HITBOX_SIZE) {
   return false;
 }
 
-/**
- * Resolve collision by adjusting player position
- */
 export function resolveCollision(
   map,
   oldX,
@@ -125,8 +109,7 @@ export function resolveCollision(
 }
 
 /**
- * ✅ Check if position collides with bombs (using hitbox collision)
- * The bomb blocks the entire cell, but only if the player is not marked as "inside"
+ * Check if position collides with bombs (player must not be marked as "inside").
  */
 export function checkBombCollision(
   lobby,
@@ -137,31 +120,22 @@ export function checkBombCollision(
 ) {
   if (!lobby.bombs) return false;
 
-  // Get player's hitbox
   const playerHitbox = getPlayerHitbox(x, y, hitboxSize);
 
   for (const bomb of lobby.bombs) {
-    // If player is marked as inside the bomb, they can move freely
     if (bomb.playersInside.has(playerId)) {
       continue;
     }
 
-    // Bomb occupies the entire cell from bomb.x to bomb.x+1, bomb.y to bomb.y+1
-    const bombLeft = bomb.x;
-    const bombRight = bomb.x + 1;
-    const bombTop = bomb.y;
-    const bombBottom = bomb.y + 1;
-
-    // Check AABB collision between player hitbox and bomb cell
     const collides = !(
-      playerHitbox.right <= bombLeft ||
-      playerHitbox.left >= bombRight ||
-      playerHitbox.bottom <= bombTop ||
-      playerHitbox.top >= bombBottom
+      playerHitbox.right <= bomb.x ||
+      playerHitbox.left >= bomb.x + 1 ||
+      playerHitbox.bottom <= bomb.y ||
+      playerHitbox.top >= bomb.y + 1
     );
 
     if (collides) {
-      return true; // Bomb blocks the player
+      return true;
     }
   }
 

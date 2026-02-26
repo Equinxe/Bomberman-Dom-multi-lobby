@@ -1,11 +1,8 @@
 // server/gameManager.js
-// Exports helper to generate a new mapSeed and to start a game for a lobby.
-// Uses ES modules so it can be imported by the multiplayer server.
 import crypto from "crypto";
 
 /**
- * Génère une mapSeed unique et non prédictible pour chaque gameStart.
- * Combine lobbyCode + timestamp + random bytes.
+ * Generate a unique, non-predictable map seed for a game start.
  */
 export function makeMapSeed(lobbyCode) {
   const now = Date.now().toString();
@@ -15,11 +12,7 @@ export function makeMapSeed(lobbyCode) {
 }
 
 /**
- * Démarre la partie pour un lobby et notifie les clients via broadcastFunc.
- * broadcastFunc(type, payload) est une fonction fournie par le serveur pour émettre
- * vers les sockets du lobby (déjà liée à la room).
- *
- * Par défaut nous envoyons mapOptions.destructibleProb = 0.42 (plus rempli).
+ * Start a game for a lobby and notify clients via broadcastFunc.
  */
 export function startGameForLobby(
   broadcastFunc,
@@ -35,15 +28,11 @@ export function startGameForLobby(
     initialCountdown: opts.initialCountdown ?? 300,
     gameTimer: opts.gameTimer ?? opts.initialCountdown ?? 300,
     mapSeed,
-    map: opts.mapGrid ?? null, // ✅ Full grid from server
+    map: opts.mapGrid ?? null,
     mapOptions: opts.mapOptions ?? { destructibleProb: 0.42 },
-    gameMode: opts.gameMode ?? "ffa", // ✅ Include game mode
+    gameMode: opts.gameMode ?? "ffa",
   };
 
-  // Notify clients in the lobby: broadcastFunc is expected to attach the "type" wrapper
-  // e.g. broadcastFunc('gameStart', payload)
   broadcastFunc("gameStart", payload);
-
-  // Retour pour logs/debug si besoin
   return mapSeed;
 }

@@ -1,6 +1,5 @@
-// Constants shared between server and client to avoid duplication.
+// shared/constants.js
 
-// Power-up types that can drop from blocks (gameplay-relevant ones)
 export const POWERUP_TYPE_KEYS = [
   "flames",
   "bombs",
@@ -12,13 +11,9 @@ export const POWERUP_TYPE_KEYS = [
   "skull",
 ];
 
-// Probability that a destroyed block drops a power-up
-export const POWERUP_DROP_CHANCE = 0.25; // 25%
+export const POWERUP_DROP_CHANCE = 0.25;
 
-// Player colors used throughout the game
-// Matches PlayerTest.png row order (pixel-verified):
-//   Row 0 = White, Row 1 = Green, Row 2 = Red, Row 3 = Cyan,
-//   Row 4 = Yellow, Row 5 = Blue, Row 6 = Pink, Row 7 = Black
+// Player colors (matches PlayerTest.png row order)
 export const PLAYER_COLORS = [
   { name: "Blanc", code: "#e0e0e0", hex: "#e0e0e0" },
   { name: "Vert", code: "#00c000", hex: "#00c000" },
@@ -30,19 +25,16 @@ export const PLAYER_COLORS = [
   { name: "Noir", code: "#404040", hex: "#404040" },
 ];
 
-// Standard map dimensions
 export const MAP_COLS = 15;
 export const MAP_ROWS = 13;
 
-// Player hitbox size (fraction of a cell)
-// Art is ~16px wide in a 24px cell = 0.67, but use slightly smaller for forgiving gameplay
 export const PLAYER_HITBOX_SIZE = 0.5;
 
-// ========== TEAM MODE (2v2) ==========
+// Team mode
 export const TEAMS = {
-  NONE: 0, // Free-for-all (no team)
-  ALPHA: 1, // Team Alpha (blue)
-  BETA: 2, // Team Beta (red)
+  NONE: 0,
+  ALPHA: 1,
+  BETA: 2,
 };
 
 export const TEAM_INFO = {
@@ -61,13 +53,12 @@ export const TEAM_INFO = {
   },
 };
 
-// Maximum players per team
 export const TEAM_MAX_PLAYERS = 2;
 
-// ========== GAME MODES ==========
+// Game modes
 export const GAME_MODES = {
-  FFA: "ffa", // Free-for-all (default)
-  TEAM: "team", // 2v2 Team mode
+  FFA: "ffa",
+  TEAM: "team",
 };
 
 export const GAME_MODE_INFO = {

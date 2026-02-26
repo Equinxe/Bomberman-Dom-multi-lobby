@@ -4,8 +4,8 @@
 const TILE_INDICES = {
   wall: 33, // L0, C33 = Mur indestructible gris
   wallDark: 71, // L1, C31 = Variante sombre
-  floor: 73, // ✅ L1, C33 = Sol vert (index 1*40+33 = 73)
-  blockBase: 432, // ✅ L10, C32 = Bloc destructible brun (index 10*40+32 = 432)
+  floor: 73, // L1, C33 = Sol vert (index 1*40+33 = 73)
+  blockBase: 432, // L10, C32 = Bloc destructible brun (index 10*40+32 = 432)
   blockAnimStart: 433, // L10, C33 = Start of block breaking animation
   blockAnimEnd: 439, // L10, C39 = End of block breaking animation
 };

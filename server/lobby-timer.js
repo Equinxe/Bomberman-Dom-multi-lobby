@@ -1,19 +1,13 @@
 // server/lobby-timer.js
-// LobbyTimer: now calls an onStartGame callback when the waiting/countdown completes
-// instead of broadcasting a bare gameStart. This lets the server call the gameManager
-// to generate a fresh mapSeed and send a proper payload to clients.
-//
-// Constructor: new LobbyTimer(broadcastFn, getPlayersFn, onStartGameFn)
-// - broadcastFn(type, payload) -> emits to lobby (unchanged behavior for waiting/countdown events)
-// - getPlayersFn() -> returns current players array for the lobby
-// - onStartGameFn(opts) -> called when the lobby should start a game (opts: { reason, N, R })
+// LobbyTimer: manages waiting/countdown phases before game start.
+// Calls onStartGame callback when countdown completes.
 export class LobbyTimer {
   constructor(broadcastFn, getPlayersFn = () => [], onStartGameFn = null) {
     this.broadcast = broadcastFn;
     this.getPlayersFn = getPlayersFn;
     this.onStartGame =
       typeof onStartGameFn === "function" ? onStartGameFn : null;
-    this.timer = null; // { type: 'waiting'|'countdown', remaining, intervalId, timeoutId }
+    this.timer = null;
   }
 
   clearTimer() {
@@ -59,8 +53,7 @@ export class LobbyTimer {
     this.timer.timeoutId = setTimeout(() => {
       const { N, R, players } = this._counts();
       this.clearTimer();
-      // ✅ After 20s waiting, transition to a 10s countdown (not directly to game start)
-      // This matches the spec: "After 20 seconds, did you get 10 second game start countdown?"
+      // After waiting period, transition to 10s countdown
       if (N >= 2) {
         this.startCountdown(10, true);
       } else {
@@ -72,8 +65,7 @@ export class LobbyTimer {
   startCountdown(seconds = 10, force = false) {
     const { N, R } = this._counts();
 
-    // ✅ Allow countdown if 4+ players (even without all ready) OR all ready with N>=2
-    // OR if forced (after 20s waiting period completed with N>=2)
+    // Allow countdown if 4+ players, all ready with N>=2, or forced
     const canStart = force || N >= 4 || (R === N && N >= 2);
     if (!canStart) {
       if (R >= 1) {
@@ -116,7 +108,6 @@ export class LobbyTimer {
     this.timer.timeoutId = setTimeout(() => {
       const { N: N2, R: R2, players } = this._counts();
       this.clearTimer();
-      // ✅ Start game if forced, 4+ players, or all ready with N>=2
       const canStartNow = force || N2 >= 4 || (R2 === N2 && N2 >= 2);
       if (canStartNow && N2 >= 2) {
         if (this.onStartGame) {
@@ -139,9 +130,18 @@ export class LobbyTimer {
   evaluate() {
     const { N, R } = this._counts();
 
-    // ✅ 4 players joined → immediate 10s countdown (regardless of ready state)
-    if (N >= 4) {
+    // All ready with 2+ players → immediate 10s countdown
+    if (R === N && N >= 2) {
       this.startCountdown(10);
+      return;
+    }
+
+    // 4 players joined → 20s waiting period (time to pick colors/teams)
+    // then auto-transitions to 10s countdown via startWaiting timeout
+    if (N >= 4) {
+      if (!this.timer || this.timer.type !== "waiting") {
+        this.startWaiting(20);
+      }
       return;
     }
 
@@ -153,11 +153,6 @@ export class LobbyTimer {
           this.broadcast("countdownCancelled", {});
       }
       this.clearTimer();
-      return;
-    }
-
-    if (R === N && N >= 2) {
-      this.startCountdown(10);
       return;
     }
 

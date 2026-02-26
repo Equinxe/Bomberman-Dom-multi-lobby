@@ -2,6 +2,8 @@
 // Shared map generation logic — used by both server and client.
 // Deterministic: same seed always produces same map.
 
+import { MAP_COLS, MAP_ROWS } from "./constants.js";
+
 export function xmur3(str) {
   let h = 1779033703 ^ str.length;
   for (let i = 0; i < str.length; i++) {
@@ -42,8 +44,8 @@ export function makeRngFromSeed(seed) {
  * @returns {{ grid: string[][], width: number, height: number, cellSize: number, seed: string }}
  */
 export function generateMapFromSeed(
-  cols = 15,
-  rows = 13,
+  cols = MAP_COLS,
+  rows = MAP_ROWS,
   seed = null,
   options = {},
 ) {

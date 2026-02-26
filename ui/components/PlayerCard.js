@@ -105,7 +105,7 @@ export function PlayerCard({
         },
         children: [player.pseudo || "En attente..."],
       },
-      // ✅ Team badge (shows team assignment for all non-empty players)
+      // Team badge (shows team assignment for all non-empty players)
       !player.empty && (player.team || 0) !== 0
         ? {
             tag: "div",
@@ -206,7 +206,7 @@ export function PlayerCard({
                       },
                     },
                   ]),
-              // ✅ Team selector (only for local player, only in team mode)
+              // Team selector (only for local player, only in team mode)
               ...(isMe && gameMode === GAME_MODES.TEAM
                 ? [
                     TeamSelector({

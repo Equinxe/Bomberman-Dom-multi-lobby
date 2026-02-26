@@ -422,7 +422,7 @@ function playerHudCard(p = {}, index = 0, localPlayerId = null) {
               style: `font-size: 7px; color: ${isDead ? "#666" : "#cfeedd"}; letter-spacing: 1px; white-space: nowrap; display:flex; align-items:center; gap:3px; ${isDead ? "text-decoration: line-through;" : ""}`,
             },
             children: [
-              // ✅ Team label badge
+              // Team label badge
               ...(playerTeam !== 0
                 ? [
                     {

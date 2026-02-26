@@ -1,10 +1,9 @@
 // shared/player-defaults.js
-// Default player stats — shared between server initialisation and lobby reset
-// to avoid duplication of the same reset block in multiple places.
+
+import { MAP_COLS, MAP_ROWS } from "./constants.js";
 
 /**
- * Reset a player object to default game-start values.
- * Mutates the player in place and returns it for convenience.
+ * Reset a player to default game-start values. Mutates in place.
  */
 export function resetPlayerStats(player) {
   player.lives = 3;
@@ -34,19 +33,19 @@ export function resetPlayerStats(player) {
 }
 
 /**
- * Player spawn positions for a standard 15×13 map.
+ * Spawn positions for a standard map.
  */
 export const SPAWN_POSITIONS = [
-  { x: 1, y: 1 }, // Top-Left
-  { x: 13, y: 11 }, // Bottom-Right (cols-2, rows-2)
-  { x: 13, y: 1 }, // Top-Right
-  { x: 1, y: 11 }, // Bottom-Left
+  { x: 1, y: 1 },
+  { x: MAP_COLS - 2, y: MAP_ROWS - 2 },
+  { x: MAP_COLS - 2, y: 1 },
+  { x: 1, y: MAP_ROWS - 2 },
 ];
 
 /**
  * Get spawn position for a player index on a given map size.
  */
-export function getSpawnPosition(index, cols = 15, rows = 13) {
+export function getSpawnPosition(index, cols = MAP_COLS, rows = MAP_ROWS) {
   const spawns = [
     { x: 1, y: 1 },
     { x: cols - 2, y: rows - 2 },

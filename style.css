@@ -254,7 +254,7 @@ body::-webkit-scrollbar-thumb {
   contain: layout style;
 }
 
-/* ✅ Spectator overlay fade-in animation */
+/* Spectator overlay fade-in animation */
 @keyframes spectator-fade-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -264,7 +264,7 @@ body::-webkit-scrollbar-thumb {
   will-change: opacity;
 }
 
-/* ✅ In-game chat styling */
+/* In-game chat styling */
 #game-chat-root {
   contain: layout style;
 }
@@ -274,7 +274,7 @@ body::-webkit-scrollbar-thumb {
   background: rgba(20,32,24,0.98) !important;
 }
 
-/* ✅ Smooth scrollbar for in-game chat */
+/* Smooth scrollbar for in-game chat */
 [data-game-chat-list]::-webkit-scrollbar {
   width: 4px;
 }

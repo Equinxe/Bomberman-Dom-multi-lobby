@@ -20,7 +20,7 @@ export function createElement(vnode, eventsMap = {}) {
   for (let [event, handlerName] of Object.entries(events)) {
     if (typeof eventsMap[handlerName] === "function") {
       el.addEventListener(event, eventsMap[handlerName]);
-      // ✅ Track handler references for patchElement to remove later
+      // Track handler references for patchElement to remove later
       if (!el._eventHandlers) el._eventHandlers = {};
       el._eventHandlers[event] = eventsMap[handlerName];
     }
@@ -97,7 +97,7 @@ function patchElement(el, oldVNode, newVNode, eventsMap) {
     }
   }
 
-  // ✅ Update event listeners: remove old ones, attach new ones
+  // Update event listeners: remove old ones, attach new ones
   const oldEvents = oldVNode.events || {};
   const newEvents = newVNode.events || {};
   for (const [event, handlerName] of Object.entries(oldEvents)) {
