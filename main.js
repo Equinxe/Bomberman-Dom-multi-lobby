@@ -197,7 +197,7 @@ function attachSocketHandlers() {
 registerLobbyEvents(sendWS);
 registerEvent("handleSubmit", handleSubmit);
 attachSocketHandlers();
-socket.init("ws://localhost:9001");
+socket.init(`ws://${location.host}`);
 
 // Show initial UI (nickname form if no nickname set)
 showLobby(container, showNicknameForm);

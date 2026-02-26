@@ -1,5 +1,12 @@
 // multiplayer/ws-server.js
-// WebSocket server: transport layer, broadcast, and connection/message routing.
+// HTTP static file server + WebSocket server.
+// Serves the game at http://localhost:3000 and handles WS on the same port.
+
+import { createServer } from "node:http";
+import { readFileSync, existsSync, statSync } from "node:fs";
+import { join, extname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { networkInterfaces } from "node:os";
 
 import WebSocket, { WebSocketServer } from "ws";
 import {
@@ -16,8 +23,81 @@ import {
 import { handleInput } from "../server/game/input-handler.js";
 import { TEAMS, TEAM_MAX_PLAYERS, GAME_MODES } from "../shared/constants.js";
 
-// WebSocket Server
-const wss = new WebSocketServer({ port: 9001 });
+// ── Static file server ──
+const __dirname = fileURLToPath(new URL("..", import.meta.url)); // project root
+const PORT = process.env.PORT || 3000;
+
+const MIME_TYPES = {
+  ".html": "text/html",
+  ".css": "text/css",
+  ".js": "application/javascript",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+const httpServer = createServer((req, res) => {
+  // Strip query strings first
+  let filePath = (req.url || "/").split("?")[0];
+  // Default to index.html
+  if (filePath === "/") filePath = "/index.html";
+  // Decode URI components (e.g. %20 → space)
+  filePath = decodeURIComponent(filePath);
+  const fullPath = join(__dirname, filePath);
+
+  // Security: prevent path traversal outside project root
+  if (!fullPath.startsWith(__dirname)) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    res.end("403 Forbidden");
+    return;
+  }
+
+  if (!existsSync(fullPath) || statSync(fullPath).isDirectory()) {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("404 Not Found");
+    return;
+  }
+
+  const ext = extname(fullPath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || "application/octet-stream";
+
+  try {
+    const data = readFileSync(fullPath);
+    res.writeHead(200, { "Content-Type": contentType });
+    res.end(data);
+  } catch (err) {
+    console.error("[http] Error reading file:", fullPath, err.message);
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("500 Internal Server Error");
+  }
+});
+
+httpServer.listen(PORT, () => {
+  console.log(`\n  🎮  Bomberman DOM is running!\n`);
+  console.log(`  ➜  Local:   http://localhost:${PORT}/`);
+  console.log(`  ➜  Network: http://${getLocalIP()}:${PORT}/\n`);
+});
+
+// ── WebSocket server (attached to the same HTTP server) ──
+const wss = new WebSocketServer({ server: httpServer });
+
+/** Return the machine's LAN IP so other computers can connect. */
+function getLocalIP() {
+  try {
+    const nets = networkInterfaces();
+    for (const iface of Object.values(nets)) {
+      for (const cfg of iface) {
+        if (cfg.family === "IPv4" && !cfg.internal) return cfg.address;
+      }
+    }
+  } catch {}
+  return "localhost";
+}
 
 /**
  * Broadcast a payload to all clients in a specific lobby.
@@ -375,5 +455,3 @@ function handleInputMsg(ws, id, data) {
   const payload = data.payload || {};
   handleInput(lobby, player, payload, broadcast);
 }
-
-console.log("WebSocket server listening on ws://localhost:9001");
