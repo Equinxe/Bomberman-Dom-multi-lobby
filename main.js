@@ -114,15 +114,25 @@ function attachSocketHandlers() {
     console.log("[main.js] Received lobby event", data?.code);
     stopGameIfRunning();
     handleLobbyUpdate(
-      data.players || [], data.chat || [], data.queue || [],
-      data, data.code, container, showNicknameForm,
+      data.players || [],
+      data.chat || [],
+      data.queue || [],
+      data,
+      data.code,
+      container,
+      showNicknameForm,
     );
   });
   socket.on("waiting", (data) => {
     stopGameIfRunning();
     handleLobbyUpdate(
-      data.players || [], data.chat || [], data.queue || [],
-      data, data.code, container, showNicknameForm,
+      data.players || [],
+      data.chat || [],
+      data.queue || [],
+      data,
+      data.code,
+      container,
+      showNicknameForm,
     );
   });
 
@@ -132,12 +142,26 @@ function attachSocketHandlers() {
   });
 
   // Countdown timers
-  socket.on("waitingStarted", (data) => showLobbyCountdown(data.duration, "Préparation"));
-  socket.on("waitingTick", (data) => showLobbyCountdown(data.value, "Préparation"));
-  socket.on("countdownStart", (data) => showLobbyCountdown(data.value, "Démarrage"));
-  socket.on("countdownTick", (data) => showLobbyCountdown(data.value, "Démarrage"));
-  socket.on("waitingCancelled", () => { hideLobbyCountdown(true); stopGameIfRunning(); });
-  socket.on("countdownCancelled", () => { hideLobbyCountdown(true); stopGameIfRunning(); });
+  socket.on("waitingStarted", (data) =>
+    showLobbyCountdown(data.duration, "Préparation"),
+  );
+  socket.on("waitingTick", (data) =>
+    showLobbyCountdown(data.value, "Préparation"),
+  );
+  socket.on("countdownStart", (data) =>
+    showLobbyCountdown(data.value, "Démarrage"),
+  );
+  socket.on("countdownTick", (data) =>
+    showLobbyCountdown(data.value, "Démarrage"),
+  );
+  socket.on("waitingCancelled", () => {
+    hideLobbyCountdown(true);
+    stopGameIfRunning();
+  });
+  socket.on("countdownCancelled", () => {
+    hideLobbyCountdown(true);
+    stopGameIfRunning();
+  });
 
   // Game start
   socket.on("gameStart", (data) => {
